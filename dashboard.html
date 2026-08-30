@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOVA — Live KWS + ASR Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:            #080d18;
+    --bg2:           #0c1220;
+    --panel:         #101828;
+    --panel-hi:      #141f33;
+    --border:        #1e2d47;
+    --border-hi:     #2a3f60;
+    --text:          #e2eaf6;
+    --text-muted:    #5a6e8a;
+    --text-dim:      #3a4f6a;
+    --green:         #22d3a0;
+    --green-dim:     rgba(34,211,160,0.15);
+    --blue:          #60a5fa;
+    --blue-dim:      rgba(96,165,250,0.15);
+    --amber:         #fbbf24;
+    --amber-dim:     rgba(251,191,36,0.15);
+    --red:           #f87171;
+    --red-dim:       rgba(248,113,113,0.12);
+    --purple:        #a78bfa;
+    --purple-dim:    rgba(167,139,250,0.15);
+    --cyan:          #38bdf8;
+    --radius:        14px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 28px 32px 40px;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(34,211,160,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 110%, rgba(96,165,250,0.05) 0%, transparent 60%);
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--green) 0%, var(--cyan) 100%);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: #080d18;
+    box-shadow: 0 0 20px rgba(34,211,160,0.35);
+    letter-spacing: -0.05em;
+  }
+  .logo-text { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
+  .logo-text .sub { color: var(--text-muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 13px; font-weight: 500;
+    transition: border-color 0.3s;
+  }
+  .status-pill.active { border-color: var(--blue); }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .dot.online   { background: var(--green);  box-shadow: 0 0 8px var(--green); }
+  .dot.listening{ background: var(--blue);   box-shadow: 0 0 8px var(--blue); animation: breathe 1.2s ease-in-out infinite; }
+  .dot.idle     { background: var(--text-muted); box-shadow: none; }
+  @keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+
+  /* ── METRICS BAR ── */
+  .metrics-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .metric-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    transition: border-color 0.3s;
+  }
+  .metric-card:hover { border-color: var(--border-hi); }
+
+  /* SVG gauge ring */
+  .gauge-wrap { position: relative; flex-shrink: 0; }
+  .gauge-wrap svg { display: block; }
+  .gauge-track { fill: none; stroke: var(--border); stroke-width: 5; }
+  .gauge-fill  { fill: none; stroke-width: 5; stroke-linecap: round;
+                 transition: stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1), stroke 0.4s; }
+  .gauge-center {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 600;
+  }
+
+  .metric-info { flex: 1; min-width: 0; }
+  .metric-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
+  }
+  .metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 600; line-height: 1.2;
+    transition: color 0.3s;
+  }
+  .metric-sub {
+    font-size: 11px; color: var(--text-muted); margin-top: 3px;
+  }
+
+  /* colour helpers */
+  .c-green  { color: var(--green); }
+  .c-blue   { color: var(--blue); }
+  .c-amber  { color: var(--amber); }
+  .c-red    { color: var(--red); }
+  .c-purple { color: var(--purple); }
+
+  /* ── MAIN GRID ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    transition: border-color 0.3s;
+  }
+  .panel.active { border-color: var(--blue-dim); }
+  .panel-title {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted);
+    margin-bottom: 16px; font-weight: 600;
+  }
+
+  /* ── TRANSCRIPT ── */
+  .live-transcript {
+    min-height: 80px; font-size: 26px; font-weight: 600;
+    line-height: 1.45; letter-spacing: -0.01em;
+    transition: color 0.3s;
+  }
+  .live-transcript .placeholder {
+    color: var(--text-dim); font-weight: 400; font-size: 16px; font-style: italic;
+  }
+  .partial { color: var(--blue); }
+  .final   { color: var(--text); }
+
+  /* ── HISTORY ── */
+  .history {
+    margin-top: 22px; max-height: 200px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .history-item {
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.025);
+    border-left: 2px solid var(--green);
+    border-radius: 6px; font-size: 14px;
+    animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+  .history-item .ts {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted); font-size: 11px; margin-right: 10px;
+  }
+
+  /* ── SIDE PANEL METRICS ── */
+  .stat-row { display: flex; flex-direction: column; gap: 14px; }
+  .stat {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .stat:last-child { border-bottom: none; padding-bottom: 0; }
+  .stat-label { font-size: 13px; color: var(--text-muted); }
+  .stat-val   { font-size: 18px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .stat-val.s-listening { color: var(--blue); }
+  .stat-val.s-idle      { color: var(--text-muted); }
+  .stat-val.s-online    { color: var(--green); }
+
+  /* ── BAR CHART for latency history ── */
+  .latency-history {
+    margin-top: 18px;
+  }
+  .latency-bars {
+    display: flex; align-items: flex-end; gap: 3px;
+    height: 40px; margin-top: 8px;
+  }
+  .lbar {
+    flex: 1; border-radius: 3px 3px 0 0;
+    background: var(--purple);
+    opacity: 0.6;
+    transition: height 0.4s ease, opacity 0.2s;
+    min-height: 3px;
+  }
+  .lbar.latest { opacity: 1; }
+
+  /* ── CONN WARNING ── */
+  .conn-warning {
+    display: none; margin-top: 16px;
+    padding: 10px 14px;
+    background: var(--red-dim);
+    border: 1px solid var(--red);
+    border-radius: 8px; font-size: 13px; color: var(--red);
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">N</div>
+    <div class="logo-text">NOVA <span class="sub">Live KWS + ASR Dashboard</span></div>
+  </div>
+  <div class="status-pill" id="statusPill">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Connecting…</span>
+  </div>
+</div>
+
+<!-- LIVE METRICS BAR -->
+<div class="metrics-bar">
+
+  <!-- CPU -->
+  <div class="metric-card" id="cpuCard">
+    <div class="gauge-wrap">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle class="gauge-track" cx="32" cy="32" r="26"/>
+        <circle class="gauge-fill" id="cpuArc" cx="32" cy="32" r="26"
+                stroke="var(--green)"
+                stroke-dasharray="163.4"
+                stroke-dashoffset="163.4"
+                transform="rotate(-90 32 32)"/>
+      </svg>
+      <div class="gauge-center c-green" id="cpuPct">—</div>
+    </div>
+    <div class="metric-info">
+      <div class="metric-label">CPU Usage</div>
+      <div class="metric-value c-green" id="cpuVal">— %</div>
+      <div class="metric-sub" id="cpuSub">idle</div>
+    </div>
+  </div>
+
+  <!-- RAM -->
+  <div class="metric-card" id="ramCard">
+    <div class="gauge-wrap">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle class="gauge-track" cx="32" cy="32" r="26"/>
+        <circle class="gauge-fill" id="ramArc" cx="32" cy="32" r="26"
+                stroke="var(--blue)"
+                stroke-dasharray="163.4"
+                stroke-dashoffset="163.4"
+                transform="rotate(-90 32 32)"/>
+      </svg>
+      <div class="gauge-center c-blue" id="ramPct">—</div>
+    </div>
+    <div class="metric-info">
+      <div class="metric-label">RAM Usage</div>
+      <div class="metric-value c-blue" id="ramVal">— MB</div>
+      <div class="metric-sub" id="ramSub">of — GB</div>
+    </div>
+  </div>
+
+  <!-- ASR LATENCY -->
+  <div class="metric-card" id="latCard">
+    <div class="gauge-wrap">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle class="gauge-track" cx="32" cy="32" r="26"/>
+        <circle class="gauge-fill" id="latArc" cx="32" cy="32" r="26"
+                stroke="var(--purple)"
+                stroke-dasharray="163.4"
+                stroke-dashoffset="163.4"
+                transform="rotate(-90 32 32)"/>
+      </svg>
+      <div class="gauge-center c-purple" id="latPctLabel">—</div>
+    </div>
+    <div class="metric-info">
+      <div class="metric-label">ASR Latency</div>
+      <div class="metric-value c-purple" id="latVal">— ms</div>
+      <div class="metric-sub" id="latSub">trigger → first word</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MAIN GRID -->
+<div class="grid">
+
+  <!-- LEFT: Transcript + History -->
+  <div class="panel" id="transcriptPanel">
+    <div class="panel-title">Live Transcript</div>
+    <div class="live-transcript" id="transcript">
+      <span class="placeholder">Waiting for "NOVA" to be detected…</span>
+    </div>
+    <div class="panel-title" style="margin-top:24px;">History</div>
+    <div class="history" id="history"></div>
+  </div>
+
+  <!-- RIGHT: System State + Latency Bars -->
+  <div class="panel" id="statePanel">
+    <div class="panel-title">System State</div>
+    <div class="stat-row">
+      <div class="stat">
+        <span class="stat-label">Status</span>
+        <span class="stat-val" id="stateValue">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Last event</span>
+        <span class="stat-val" id="lastEventValue" style="font-size:13px;">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Utterances</span>
+        <span class="stat-val" id="countValue">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Best latency</span>
+        <span class="stat-val c-purple" id="bestLatVal">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Avg latency</span>
+        <span class="stat-val c-purple" id="avgLatVal">—</span>
+      </div>
+    </div>
+
+    <!-- Mini latency spark chart -->
+    <div class="latency-history">
+      <div class="panel-title" style="margin-bottom:4px;">Latency History</div>
+      <div class="latency-bars" id="latBars">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="conn-warning" id="connWarning">
+      Not connected — make sure server.py is running on ws://127.0.0.1:8765
+    </div>
+  </div>
+
+</div>
+
+<script>
+const SERVER_URL = "ws://127.0.0.1:8765";
+const CIRC = 163.4; // 2π × 26
+
+let finalCount = 0;
+let latencyHistory = [];   // last N latency readings (ms)
+const MAX_LAT_BARS = 16;
+
+// ── DOM refs ──
+const statusDot      = document.getElementById("statusDot");
+const statusText     = document.getElementById("statusText");
+const statusPill     = document.getElementById("statusPill");
+const transcriptEl   = document.getElementById("transcript");
+const historyEl      = document.getElementById("history");
+const stateValueEl   = document.getElementById("stateValue");
+const lastEventEl    = document.getElementById("lastEventValue");
+const countValueEl   = document.getElementById("countValue");
+const connWarning    = document.getElementById("connWarning");
+const transcriptPanel= document.getElementById("transcriptPanel");
+
+// Metric card elements
+const cpuArc    = document.getElementById("cpuArc");
+const cpuPct    = document.getElementById("cpuPct");
+const cpuVal    = document.getElementById("cpuVal");
+const cpuSub    = document.getElementById("cpuSub");
+const ramArc    = document.getElementById("ramArc");
+const ramPct    = document.getElementById("ramPct");
+const ramVal    = document.getElementById("ramVal");
+const ramSub    = document.getElementById("ramSub");
+const latArc    = document.getElementById("latArc");
+const latPctLabel=document.getElementById("latPctLabel");
+const latVal    = document.getElementById("latVal");
+const latSub    = document.getElementById("latSub");
+const bestLatEl = document.getElementById("bestLatVal");
+const avgLatEl  = document.getElementById("avgLatVal");
+const latBarsEl = document.getElementById("latBars");
+
+// ── Helpers ──
+function setDot(state) {
+  statusDot.className = "dot " + state;
+  statusPill.className = "status-pill" + (state === "listening" ? " active" : "");
+}
+
+/** Update a ring gauge. pct 0-100, max offset = CIRC means empty. */
+function setGauge(arcEl, pct) {
+  const offset = CIRC - (CIRC * Math.min(pct, 100) / 100);
+  arcEl.style.strokeDashoffset = offset.toFixed(1);
+}
+
+/** Pick a colour class based on CPU/RAM percentage. */
+function levelColor(pct) {
+  if (pct >= 85) return "var(--red)";
+  if (pct >= 60) return "var(--amber)";
+  return null; // use default
+}
+
+/** Render the mini latency bar chart. */
+function renderLatBars() {
+  if (!latencyHistory.length) return;
+  const maxMs = Math.max(...latencyHistory, 1);
+  latBarsEl.innerHTML = "";
+  latencyHistory.forEach((ms, i) => {
+    const bar = document.createElement("div");
+    bar.className = "lbar" + (i === latencyHistory.length - 1 ? " latest" : "");
+    bar.style.height = Math.max(4, (ms / maxMs) * 40) + "px";
+    bar.title = ms.toFixed(0) + " ms";
+    latBarsEl.appendChild(bar);
+  });
+}
+
+/** Handle incoming metrics broadcast. */
+function handleMetrics(d) {
+  // CPU
+  if (d.cpu_pct !== null && d.cpu_pct !== undefined) {
+    const c = d.cpu_pct;
+    setGauge(cpuArc, c);
+    cpuPct.textContent = c.toFixed(0) + "%";
+    cpuVal.textContent = c.toFixed(1) + " %";
+    const col = levelColor(c);
+    cpuArc.style.stroke = col || "var(--green)";
+    cpuPct.style.color  = col || "var(--green)";
+    cpuVal.style.color  = col || "var(--green)";
+    cpuSub.textContent = c < 20 ? "idle" : c < 60 ? "moderate" : "high";
+  }
+
+  // RAM
+  if (d.ram_pct !== null && d.ram_pct !== undefined) {
+    const rp = d.ram_pct;
+    const used = d.ram_used_mb;
+    const total = d.ram_total_mb;
+    setGauge(ramArc, rp);
+    ramPct.textContent = rp.toFixed(0) + "%";
+    if (used >= 1024)
+      ramVal.textContent = (used / 1024).toFixed(2) + " GB";
+    else
+      ramVal.textContent = used.toFixed(0) + " MB";
+    const col = levelColor(rp);
+    ramArc.style.stroke = col || "var(--blue)";
+    ramPct.style.color  = col || "var(--blue)";
+    ramVal.style.color  = col || "var(--blue)";
+    ramSub.textContent = "of " + (total / 1024).toFixed(1) + " GB";
+  }
+
+  // Latency
+  if (d.latency_ms !== null && d.latency_ms !== undefined) {
+    const ms = d.latency_ms;
+    latVal.textContent = ms.toFixed(0) + " ms";
+
+    // Gauge: treat 0–2000 ms as the full arc range
+    const latPct = Math.min(ms / 2000 * 100, 100);
+    setGauge(latArc, latPct);
+    latPctLabel.textContent = ms.toFixed(0);
+
+    // Colour: <400ms green, 400-800 amber, >800 red
+    const lc = ms < 400 ? "var(--green)" : ms < 800 ? "var(--amber)" : "var(--red)";
+    latArc.style.stroke      = lc;
+    latPctLabel.style.color  = lc;
+    latVal.style.color       = lc;
+
+    // Update history
+    latencyHistory.push(ms);
+    if (latencyHistory.length > MAX_LAT_BARS) latencyHistory.shift();
+    renderLatBars();
+
+    // Best / avg
+    const best = Math.min(...latencyHistory);
+    const avg  = latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length;
+    bestLatEl.textContent = best.toFixed(0) + " ms";
+    avgLatEl.textContent  = avg.toFixed(0) + " ms";
+  }
+}
+
+// ── WebSocket ──
+function connect() {
+  const ws = new WebSocket(SERVER_URL);
+
+  ws.onopen = () => {
+    ws.send("register_dashboard");
+    statusText.textContent = "Connected";
+    setDot("online");
+    connWarning.style.display = "none";
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    const now  = new Date().toLocaleTimeString();
+
+    if (data.type === "metrics") {
+      handleMetrics(data);
+      return;
+    }
+
+    if (data.type === "status") {
+      stateValueEl.textContent  = data.text;
+      stateValueEl.className    = "stat-val s-" + data.text;
+      lastEventEl.textContent   = "status: " + data.text + " @ " + now;
+      if (data.text === "listening") {
+        setDot("listening");
+        statusText.textContent = "Streaming audio";
+        transcriptPanel.classList.add("active");
+      } else if (data.text === "idle") {
+        setDot("online");
+        statusText.textContent = "Connected";
+        transcriptPanel.classList.remove("active");
+      }
+    }
+
+    if (data.type === "partial") {
+      transcriptEl.innerHTML = '<span class="partial">' + data.text + '</span>';
+      lastEventEl.textContent = "partial @ " + now;
+    }
+
+    if (data.type === "final") {
+      transcriptEl.innerHTML = '<span class="final">' + data.text + '</span>';
+      lastEventEl.textContent = "final @ " + now;
+
+      const item = document.createElement("div");
+      item.className = "history-item";
+      item.innerHTML = '<span class="ts">' + now + '</span>' + data.text;
+      historyEl.prepend(item);
+
+      finalCount++;
+      countValueEl.textContent = finalCount;
+    }
+  };
+
+  ws.onclose = () => {
+    statusText.textContent = "Disconnected — retrying…";
+    setDot("idle");
+    connWarning.style.display = "block";
+    transcriptPanel.classList.remove("active");
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// Pre-fill latency bar placeholders
+for (let i = 0; i < MAX_LAT_BARS; i++) {
+  const b = document.createElement("div");
+  b.className = "lbar";
+  b.style.height = "3px";
+  b.style.opacity = "0.2";
+  latBarsEl.appendChild(b);
+}
+
+connect();
+</script>
+
+</body>
+</html>
