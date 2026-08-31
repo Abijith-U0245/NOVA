@@ -22,7 +22,6 @@ import asyncio
 import json
 import os
 import sys
-
 import importlib
 import glob
 import ctypes
@@ -68,13 +67,20 @@ except ImportError:
     sys.exit(1)
 
 # ── Config ─────────────────────────────────────────────────────────────────
-WHISPER_MODEL_SIZE = "base.en"      # base.en / small.en / medium.en
+WHISPER_MODEL_SIZE = "medium"       # base (multilingual) / small / medium
 WHISPER_DEVICE     = "cuda"         # "cuda" for GPU, "cpu" for CPU-only
 WHISPER_COMPUTE    = "float16"      # float16 (GPU) / int8 (CPU)
 SAMPLE_RATE        = 16000          # Hz — must match stream_to_vosk.py
 HOST               = "0.0.0.0"
 PORT               = 8765
 METRICS_INTERVAL   = 2.0            # seconds between metric broadcasts
+
+LANG_MAP = {
+    "en": "English 🇬🇧",
+    "hi": "Hindi 🇮🇳",
+    "ta": "Tamil 🇮🇳",
+    "ml": "Malayalam 🇮🇳",
+}
 # ───────────────────────────────────────────────────────────────────────────
 
 dashboard_clients = set()
@@ -145,15 +151,16 @@ async def metrics_broadcaster():
 
 
 # ── Whisper transcription (runs in thread pool) ─────────────────────────────
-def _transcribe(audio_np: np.ndarray) -> str:
+def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
     """Blocking call — run via loop.run_in_executor so it doesn't block asyncio."""
     if audio_np.size == 0:
-        return ""
+        return "", "Unknown"
     try:
-        segments, _ = whisper_model.transcribe(
+        segments, info = whisper_model.transcribe(
             audio_np,
-            language="en",
             beam_size=5,
+            condition_on_previous_text=False,
+            initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
             vad_filter=True,           # skip silent sections
             vad_parameters=dict(min_silence_duration_ms=300),
         )
@@ -161,18 +168,39 @@ def _transcribe(audio_np: np.ndarray) -> str:
 
         # If vad_filter dropped quiet spoken text, fallback to vad_filter=False
         if not text and audio_np.size > 16000 * 0.5:
-            segments, _ = whisper_model.transcribe(
+            segments, info = whisper_model.transcribe(
                 audio_np,
-                language="en",
                 beam_size=5,
+                condition_on_previous_text=False,
+                initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
                 vad_filter=False,
             )
             text = " ".join(s.text.strip() for s in segments).strip()
 
-        return text
+        lang_code = info.language
+        if lang_code not in ["en", "hi", "ta", "ml"]:
+            print(f"[server] Auto-detected '{lang_code}' (outside target). Retrying as English...")
+            try:
+                segments, info = whisper_model.transcribe(
+                    audio_np,
+                    language="en",
+                    beam_size=5,
+                    condition_on_previous_text=False,
+                    initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=300),
+                )
+                text = " ".join(s.text.strip() for s in segments).strip()
+            except Exception:
+                pass
+            lang_code = "en"
+
+        lang_name = LANG_MAP.get(lang_code, lang_code.upper())
+        print(f"[server] Detected language: {lang_name} (prob: {info.language_probability:.2f})")
+        return text, lang_name
     except Exception as e:
         print(f"[server] Transcription error: {e}")
-        return ""
+        return "", "Unknown"
 
 
 # ── Connection handler ───────────────────────────────────────────────────────
@@ -234,7 +262,7 @@ async def handle_connection(websocket):
 
         loop = asyncio.get_event_loop()
         t0   = time.perf_counter()
-        text = await loop.run_in_executor(None, _transcribe, audio_np)
+        text, lang = await loop.run_in_executor(None, _transcribe, audio_np)
         transcribe_ms = (time.perf_counter() - t0) * 1000
 
         if _trigger_ts is not None:
@@ -243,8 +271,8 @@ async def handle_connection(websocket):
                   f"(whisper inference: {transcribe_ms:.0f} ms)")
 
         if text:
-            print(f"[FINAL] {text}")
-            await broadcast({"type": "final", "text": text, "ts": time.time()})
+            print(f"[FINAL] [{lang}] {text}")
+            await broadcast({"type": "final", "text": text, "language": lang, "ts": time.time()})
         else:
             print("[server] empty transcript (silence or no speech detected)")
             await broadcast({"type": "partial", "text": "", "ts": time.time()})

@@ -540,12 +540,14 @@ function connect() {
     }
 
     if (data.type === "final") {
-      transcriptEl.innerHTML = '<span class="final">' + data.text + '</span>';
+      const langBadge = data.language ? ' <span style="font-size:12px; padding:2px 8px; border-radius:4px; background:var(--purple-dim); color:var(--purple); margin-left:8px; font-weight:normal; display:inline-block; vertical-align:middle;">' + data.language + '</span>' : '';
+      transcriptEl.innerHTML = '<span class="final">' + data.text + '</span>' + langBadge;
       lastEventEl.textContent = "final @ " + now;
 
       const item = document.createElement("div");
       item.className = "history-item";
-      item.innerHTML = '<span class="ts">' + now + '</span>' + data.text;
+      const itemLang = data.language ? ' <span style="color:var(--purple); font-size:11px; font-weight:600; margin-left:6px;">[' + data.language + ']</span>' : '';
+      item.innerHTML = '<span class="ts">' + now + '</span>' + data.text + itemLang;
       historyEl.prepend(item);
 
       finalCount++;
