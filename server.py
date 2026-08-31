@@ -80,6 +80,14 @@ LANG_MAP = {
     "hi": "Hindi 🇮🇳",
     "ta": "Tamil 🇮🇳",
     "ml": "Malayalam 🇮🇳",
+    "kn": "Kannada 🇮🇳",
+}
+
+LANGUAGE_CORRECTIONS = {
+    "ms": "ml",  # Malay -> Malayalam
+    "mr": "hi",  # Marathi -> Hindi
+    "ne": "hi",  # Nepali -> Hindi
+    "sa": "hi",  # Sanskrit -> Hindi
 }
 # ───────────────────────────────────────────────────────────────────────────
 
@@ -160,7 +168,8 @@ def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
             audio_np,
             beam_size=5,
             condition_on_previous_text=False,
-            initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
+            no_speech_threshold=0.8,
+            log_prob_threshold=-0.8,
             vad_filter=True,           # skip silent sections
             vad_parameters=dict(min_silence_duration_ms=300),
         )
@@ -172,13 +181,16 @@ def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
                 audio_np,
                 beam_size=5,
                 condition_on_previous_text=False,
-                initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
+                no_speech_threshold=0.8,
+                log_prob_threshold=-0.8,
                 vad_filter=False,
             )
             text = " ".join(s.text.strip() for s in segments).strip()
 
         lang_code = info.language
-        if lang_code not in ["en", "hi", "ta", "ml"]:
+        lang_code = LANGUAGE_CORRECTIONS.get(lang_code, lang_code)
+
+        if lang_code not in ["en", "hi", "ta", "ml", "kn"]:
             print(f"[server] Auto-detected '{lang_code}' (outside target). Retrying as English...")
             try:
                 segments, info = whisper_model.transcribe(
@@ -186,7 +198,8 @@ def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
                     language="en",
                     beam_size=5,
                     condition_on_previous_text=False,
-                    initial_prompt="NOVA, English, Hindi, Tamil, Malayalam, മലയാളം, தமிழ், हिंदी",
+                    no_speech_threshold=0.8,
+                    log_prob_threshold=-0.8,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=300),
                 )

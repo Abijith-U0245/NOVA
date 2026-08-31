@@ -16,7 +16,7 @@
 #define STEP_SAMPLES (SAMPLE_RATE / 4)                  // 0.25s hop -> 75% overlap
 
 #define NOVA_LABEL "nova"
-#define CONFIDENCE_THRESHOLD 0.70f
+#define CONFIDENCE_THRESHOLD 0.55f
 #define VOTE_WINDOW 3
 #define VOTE_REQUIRED 1
 #define COOLDOWN_HOPS 4   // ~1s cooldown after a trigger (4 hops at 0.25s each)
