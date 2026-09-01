@@ -54,6 +54,14 @@ except ImportError:
     sys.exit(1)
 
 try:
+    from aiohttp import web as aio_web
+    _HAS_AIOHTTP = True
+except ImportError:
+    _HAS_AIOHTTP = False
+    print("[warn] aiohttp not installed — ESP32 HTTP trigger disabled.")
+    print("       Install: pip install aiohttp --break-system-packages")
+
+try:
     import psutil
     _HAS_PSUTIL = True
 except ImportError:
@@ -73,6 +81,7 @@ WHISPER_COMPUTE    = "float16"      # float16 (GPU) / int8 (CPU)
 SAMPLE_RATE        = 16000          # Hz — must match stream_to_vosk.py
 HOST               = "0.0.0.0"
 PORT               = 8765
+HTTP_TRIGGER_PORT  = 8766           # ESP32 sends HTTP POST here
 METRICS_INTERVAL   = 2.0            # seconds between metric broadcasts
 
 LANG_MAP = {
@@ -217,6 +226,44 @@ def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
 
 
 # ── Connection handler ───────────────────────────────────────────────────────
+# ── ESP32 HTTP trigger endpoint ─────────────────────────────────────────────
+async def _on_esp32_trigger(request):
+    """Called when ESP32 sends POST /trigger after detecting NOVA."""
+    global _trigger_ts, _last_latency_ms
+
+    print("[server] ESP32 HTTP trigger received — launching stream_to_vosk.py")
+    _trigger_ts      = time.time()
+    _last_latency_ms = None
+    await broadcast({"type": "status", "text": "listening", "ts": time.time()})
+    await broadcast({"type": "partial", "text": "🎤 Listening…", "ts": time.time()})
+
+    # Launch the PC-side mic streamer in background (same as C++ app does)
+    import subprocess
+    subprocess.Popen(
+        [sys.executable,
+         "/home/abijith-u/Downloads/NOVA/example-standalone-inferencing/stream_to_vosk.py"],
+        close_fds=True,
+    )
+
+    return aio_web.Response(text="OK", status=200)
+
+
+async def http_trigger_server():
+    """Minimal HTTP server on HTTP_TRIGGER_PORT for ESP32 trigger POSTs."""
+    if not _HAS_AIOHTTP:
+        print("[warn] aiohttp missing — ESP32 /trigger endpoint disabled.")
+        return
+    app = aio_web.Application()
+    app.router.add_post("/trigger", _on_esp32_trigger)
+    runner = aio_web.AppRunner(app)
+    await runner.setup()
+    site   = aio_web.TCPSite(runner, HOST, HTTP_TRIGGER_PORT)
+    await site.start()
+    print(f"[server] ESP32 trigger HTTP endpoint ready: http://{HOST}:{HTTP_TRIGGER_PORT}/trigger")
+
+
+
+# ── WebSocket connection handler ─────────────────────────────────────────────
 async def handle_connection(websocket):
     global _trigger_ts, _last_latency_ms
 
@@ -300,6 +347,7 @@ async def main():
     print(f"NOVA Whisper WebSocket server on ws://{HOST}:{PORT}")
     async with websockets.serve(handle_connection, HOST, PORT):
         asyncio.create_task(metrics_broadcaster())
+        asyncio.create_task(http_trigger_server())   # ESP32 HTTP trigger
         print("Ready. Waiting for KWS trigger and/or dashboard to connect…")
         await asyncio.Future()   # run forever
 
