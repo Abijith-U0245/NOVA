@@ -83,7 +83,7 @@
 
 #if EIDSP_USE_ASSERTS == 1
 #include <assert.h>
-#define EIDSP_ERR(err_code) ei_printf("ERR: %d (%s)\n", err_code, #err_code); assert(false)
+#define EIDSP_ERR(err_code) return(err_code)
 #else // EIDSP_USE_ASSERTS == 0
 #define EIDSP_ERR(err_code) return(err_code)
 #endif
@@ -112,7 +112,7 @@
 
 #ifndef EIDSP_USE_ESP_DSP
 #if defined(ESP32) || defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32C3)
-#define EIDSP_USE_ESP_DSP 1
+#define EIDSP_USE_ESP_DSP 0
 #else
 #define EIDSP_USE_ESP_DSP 0
 #endif

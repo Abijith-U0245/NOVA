@@ -97,32 +97,23 @@ __attribute__((weak)) void ei_printf_float(float f) {
 
 // we use alligned alloc instead of regular malloc
 // due to https://github.com/espressif/esp-nn/issues/7
+// we use aligned alloc rounded up to 16 bytes for ESP32-S3 SIMD
 __attribute__((weak)) void *ei_malloc(size_t size) {
+    size_t aligned_size = (size + 15) & ~15;
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    return heap_caps_aligned_alloc(16, size, MALLOC_CAP_DEFAULT);
+    return heap_caps_aligned_alloc(16, aligned_size, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
 #else
-    return aligned_alloc(16, size);
-#endif
-#endif
     return malloc(size);
+#endif
 }
 
 __attribute__((weak)) void *ei_calloc(size_t nitems, size_t size) {
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    return heap_caps_calloc(nitems, size, MALLOC_CAP_DEFAULT);
-#else
-    void *p;
-    p = aligned_alloc(16, nitems * size);
-    if (p == nullptr)
-        return p;
-
-    memset(p, '\0', nitems * size);
+    size_t total = nitems * size;
+    void *p = ei_malloc(total);
+    if (p) {
+        memset(p, 0, total);
+    }
     return p;
-#endif
-#endif
-    return calloc(nitems, size);
 }
 
 __attribute__((weak)) void ei_free(void *ptr) {

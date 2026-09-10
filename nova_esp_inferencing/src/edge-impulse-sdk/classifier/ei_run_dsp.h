@@ -1468,7 +1468,6 @@ __attribute__((unused)) void calc_cepstral_mean_and_var_normalization_mfe(ei_mat
         }
     }
     else {
-        // normalization
         int ret = speechpy::processing::mfe_normalization(matrix, config->noise_floor_db);
         if (ret != EIDSP_OK) {
             ei_printf("ERR: normalization failed (%d)\n", ret);

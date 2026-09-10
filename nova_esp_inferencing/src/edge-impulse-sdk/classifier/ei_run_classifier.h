@@ -506,7 +506,8 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
     memset(result->_raw_outputs, 0, sizeof(ei_feature_t) * handle->impulse->learning_blocks_size);
 
     auto impulse = handle->impulse;
-    static ei::matrix_t static_features_matrix(1, impulse->nn_input_frame_size);
+    static float static_features_buf[EI_CLASSIFIER_NN_INPUT_FRAME_SIZE];
+    static ei::matrix_t static_features_matrix(1, EI_CLASSIFIER_NN_INPUT_FRAME_SIZE, static_features_buf);
     if (!static_features_matrix.buffer) {
         return EI_IMPULSE_ALLOC_FAILED;
     }
@@ -577,48 +578,35 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
     if (classifier_continuous_features_written >= impulse->nn_input_frame_size) {
         dsp_start_us = ei_read_timer_us();
 
-        uint32_t block_num = impulse->dsp_blocks_size + impulse->learning_blocks_size;
+        static ei_feature_t features[8];
+        memset(features, 0, sizeof(features));
 
-        // smart pointer to features array
-        std::unique_ptr<ei_feature_t[]> features_ptr(new ei_feature_t[block_num]);
-        ei_feature_t* features = features_ptr.get();
-        if (features == nullptr) {
-            ei_printf("ERR: Out of memory, can't allocate features\n");
-            return EI_IMPULSE_ALLOC_FAILED;
+        static float *static_norm_buf = NULL;
+        static ei::matrix_t *static_norm_matrix = NULL;
+        if (!static_norm_buf) {
+#ifdef ESP32
+            static_norm_buf = (float*) heap_caps_malloc(impulse->nn_input_frame_size * sizeof(float), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!static_norm_buf) {
+                static_norm_buf = (float*) heap_caps_malloc(impulse->nn_input_frame_size * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            }
+#else
+            static_norm_buf = (float*) malloc(impulse->nn_input_frame_size * sizeof(float));
+#endif
+            if (static_norm_buf) {
+                static_norm_matrix = new ei::matrix_t(1, impulse->nn_input_frame_size, static_norm_buf);
+            }
         }
-        memset(features, 0, sizeof(ei_feature_t) * block_num);
 
-        // have it outside of the loop to avoid going out of scope
-        std::unique_ptr<ei::matrix_t> *matrix_ptrs = new std::unique_ptr<ei::matrix_t>[block_num];
-        if (matrix_ptrs == nullptr) {
-            ei_printf("ERR: Out of memory, can't allocate matrix_ptrs\n");
-            return EI_IMPULSE_ALLOC_FAILED;
+        if (static_norm_buf) {
+            memcpy(static_norm_buf, static_features_matrix.buffer, impulse->nn_input_frame_size * sizeof(float));
         }
 
         out_features_index = 0;
-        // iterate over every dsp block and run normalization
+        // iterate over every dsp block and run normalization on the copy buffer
         for (size_t ix = 0; ix < impulse->dsp_blocks_size; ix++) {
             ei_model_dsp_t block = impulse->dsp_blocks[ix];
-            matrix_ptrs[ix] = std::unique_ptr<ei::matrix_t>(new ei::matrix_t(1, block.n_output_features));
-
-            if (matrix_ptrs[ix] == nullptr) {
-                ei_printf("ERR: Out of memory, can't allocate matrix_ptrs[%lu]\n", (unsigned long)ix);
-                return EI_IMPULSE_ALLOC_FAILED;
-            }
-
-            if (matrix_ptrs[ix]->buffer == nullptr) {
-                ei_printf("ERR: Out of memory, can't allocate matrix_ptrs[%lu]\n", (unsigned long)ix);
-                delete[] matrix_ptrs;
-                return EI_IMPULSE_ALLOC_FAILED;
-            }
-
-            features[ix].matrix = matrix_ptrs[ix].get();
+            features[ix].matrix = static_norm_matrix ? static_norm_matrix : &static_features_matrix;
             features[ix].blockId = block.blockId;
-
-            /* Create a copy of the matrix for normalization */
-            for (size_t m_ix = 0; m_ix < block.n_output_features; m_ix++) {
-                features[ix].matrix->buffer[m_ix] = static_features_matrix.buffer[out_features_index + m_ix];
-            }
 
             if (block.extract_fn == extract_mfcc_features) {
                 calc_cepstral_mean_and_var_normalization_mfcc(features[ix].matrix, block.config);
@@ -648,7 +636,6 @@ extern "C" EI_IMPULSE_ERROR process_impulse_continuous(ei_impulse_handle_t *hand
         if (ei_impulse_error != EI_IMPULSE_OK) {
             return ei_impulse_error;
         }
-        delete[] matrix_ptrs;
         ei_impulse_error = run_postprocessing(handle, result);
         if (ei_impulse_error != EI_IMPULSE_OK) {
             return ei_impulse_error;

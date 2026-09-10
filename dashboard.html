@@ -3,248 +3,232 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NOVA — Live KWS + ASR Dashboard</title>
+<title>NOVA — Edge KWS + ASR Dashboard | PS-26172</title>
+<meta name="description" content="Low-latency keyword spotting on ESP32-S3 for ISRO Smart Automation Challenge PS-26172. Real-time metrics for NOVA wake-word detection.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg:            #080d18;
-    --bg2:           #0c1220;
-    --panel:         #101828;
-    --panel-hi:      #141f33;
-    --border:        #1e2d47;
-    --border-hi:     #2a3f60;
-    --text:          #e2eaf6;
-    --text-muted:    #5a6e8a;
-    --text-dim:      #3a4f6a;
-    --green:         #22d3a0;
-    --green-dim:     rgba(34,211,160,0.15);
-    --blue:          #60a5fa;
-    --blue-dim:      rgba(96,165,250,0.15);
-    --amber:         #fbbf24;
-    --amber-dim:     rgba(251,191,36,0.15);
-    --red:           #f87171;
-    --red-dim:       rgba(248,113,113,0.12);
-    --purple:        #a78bfa;
-    --purple-dim:    rgba(167,139,250,0.15);
-    --cyan:          #38bdf8;
-    --radius:        14px;
+    --bg:          #03070f;
+    --bg2:         #060d1a;
+    --panel:       rgba(8,18,38,0.85);
+    --panel-hi:    rgba(12,24,50,0.95);
+    --border:      rgba(30,60,100,0.6);
+    --border-hi:   rgba(50,120,200,0.5);
+    --text:        #d8e8f8;
+    --text-muted:  #4a6a8a;
+    --text-dim:    #1e3048;
+    --green:       #00e5a0;
+    --green-glow:  rgba(0,229,160,0.25);
+    --green-dim:   rgba(0,229,160,0.08);
+    --blue:        #4da8ff;
+    --blue-glow:   rgba(77,168,255,0.25);
+    --blue-dim:    rgba(77,168,255,0.08);
+    --amber:       #ffbf00;
+    --amber-glow:  rgba(255,191,0,0.2);
+    --red:         #ff5757;
+    --red-dim:     rgba(255,87,87,0.1);
+    --purple:      #c77dff;
+    --purple-glow: rgba(199,125,255,0.25);
+    --purple-dim:  rgba(199,125,255,0.08);
+    --cyan:        #00cfff;
+    --isro:        #f97316;
+    --isro-dim:    rgba(249,115,22,0.15);
+    --radius:      16px;
+    --radius-sm:   10px;
   }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Space Grotesk',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;position:relative}
+  #starfield{position:fixed;inset:0;z-index:0;pointer-events:none}
+  body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse 70% 55% at 15% 0%,rgba(0,229,160,0.07) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 85% 100%,rgba(77,168,255,0.06) 0%,transparent 55%),radial-gradient(ellipse 40% 30% at 50% 50%,rgba(199,125,255,0.03) 0%,transparent 50%);pointer-events:none}
+  .app-wrap{position:relative;z-index:1;padding-bottom:48px}
 
-  body {
-    font-family: 'Inter', system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    padding: 28px 32px 40px;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(34,211,160,0.06) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 80% 110%, rgba(96,165,250,0.05) 0%, transparent 60%);
-  }
+  /* MISSION BANNER */
+  .mission-banner{background:linear-gradient(135deg,rgba(10,25,50,0.98) 0%,rgba(5,15,35,0.98) 100%);border-bottom:1px solid var(--border);padding:11px 36px;display:flex;align-items:center;justify-content:space-between;gap:20px;backdrop-filter:blur(20px);position:sticky;top:0;z-index:100}
+  .mission-badge{display:flex;align-items:center;gap:10px}
+  .isro-chip{background:var(--isro-dim);border:1px solid var(--isro);border-radius:6px;padding:3px 10px;font-family:'Orbitron',monospace;font-size:10px;font-weight:600;color:var(--isro);letter-spacing:0.12em;white-space:nowrap}
+  .ps-tag{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-muted);letter-spacing:0.05em}
+  .ps-tag strong{color:var(--text);font-weight:600}
+  .constraint-pills{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .constraint-pill{display:flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;border:1px solid;white-space:nowrap}
+  .cp-ram{background:var(--blue-dim);border-color:rgba(77,168,255,0.35);color:var(--blue)}
+  .cp-cpu{background:var(--green-dim);border-color:rgba(0,229,160,0.35);color:var(--green)}
+  .cp-oss{background:var(--purple-dim);border-color:rgba(199,125,255,0.35);color:var(--purple)}
+  .cp-kws{background:var(--isro-dim);border-color:rgba(249,115,22,0.35);color:var(--isro)}
 
-  /* ── HEADER ── */
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 28px;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .logo-icon {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, var(--green) 0%, var(--cyan) 100%);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; font-weight: 700; color: #080d18;
-    box-shadow: 0 0 20px rgba(34,211,160,0.35);
-    letter-spacing: -0.05em;
-  }
-  .logo-text { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
-  .logo-text .sub { color: var(--text-muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  /* HERO */
+  .hero{padding:40px 36px 28px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+  .nova-logotype{display:flex;align-items:center;gap:18px;margin-bottom:8px}
+  .nova-orb{width:58px;height:58px;border-radius:50%;background:conic-gradient(from 180deg at 50% 50%,var(--green) 0%,var(--cyan) 30%,var(--blue) 60%,var(--green) 100%);display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;box-shadow:0 0 28px var(--green-glow),0 0 56px rgba(0,229,160,0.1);animation:orbRotate 9s linear infinite}
+  .nova-orb::after{content:'';position:absolute;inset:4px;border-radius:50%;background:var(--bg)}
+  .nova-orb-letter{position:relative;z-index:1;font-family:'Orbitron',monospace;font-size:20px;font-weight:900;color:var(--green);text-shadow:0 0 12px var(--green)}
+  @keyframes orbRotate{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(360deg)}}
+  .nova-title{font-family:'Orbitron',monospace;font-size:38px;font-weight:900;letter-spacing:0.07em;background:linear-gradient(135deg,var(--green) 0%,var(--cyan) 50%,var(--blue) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+  .hero-subtitle{font-size:12.5px;color:var(--text-muted);line-height:1.65;max-width:500px;margin-top:6px;margin-left:76px}
+  .hero-right{display:flex;align-items:center;gap:12px}
+  .status-pill{display:flex;align-items:center;gap:9px;padding:9px 20px;border-radius:999px;border:1px solid var(--border);background:var(--panel);backdrop-filter:blur(20px);font-size:13px;font-weight:500;transition:border-color 0.4s,box-shadow 0.4s}
+  .status-pill.active{border-color:var(--blue);box-shadow:0 0 20px var(--blue-glow)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--text-dim);transition:background 0.3s,box-shadow 0.3s}
+  .dot.online{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .dot.listening{background:var(--blue);box-shadow:0 0 10px var(--blue);animation:breathe 1s ease-in-out infinite}
+  .dot.idle{background:var(--text-muted);box-shadow:none}
+  @keyframes breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(0.7)}}
+  .clock-chip{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-muted);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-width:90px;text-align:center;backdrop-filter:blur(20px)}
 
-  .status-pill {
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 16px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--panel);
-    font-size: 13px; font-weight: 500;
-    transition: border-color 0.3s;
-  }
-  .status-pill.active { border-color: var(--blue); }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--text-dim);
-    transition: background 0.3s, box-shadow 0.3s;
-  }
-  .dot.online   { background: var(--green);  box-shadow: 0 0 8px var(--green); }
-  .dot.listening{ background: var(--blue);   box-shadow: 0 0 8px var(--blue); animation: breathe 1.2s ease-in-out infinite; }
-  .dot.idle     { background: var(--text-muted); box-shadow: none; }
-  @keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+  /* CONSTRAINT CARDS */
+  .constraints-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:0 36px;margin-bottom:22px}
+  .constraint-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 18px;backdrop-filter:blur(20px);display:flex;align-items:flex-start;gap:12px;transition:border-color 0.3s}
+  .constraint-card:hover{border-color:var(--border-hi)}
+  .constraint-icon{font-size:20px;line-height:1;flex-shrink:0;margin-top:1px}
+  .constraint-title{font-size:9.5px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:700;margin-bottom:3px}
+  .constraint-requirement{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600}
+  .constraint-note{font-size:10px;color:var(--text-muted);margin-top:2px}
+  .pass-fail{margin-left:auto;width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px;background:var(--text-dim);transition:background 0.4s,box-shadow 0.4s}
+  .pass-fail.pass{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .pass-fail.fail{background:var(--red);box-shadow:0 0 8px var(--red);animation:failPulse 0.6s ease infinite alternate}
+  @keyframes failPulse{from{opacity:1}to{opacity:0.5}}
 
-  /* ── METRICS BAR ── */
-  .metrics-bar {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-  .metric-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 20px;
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    transition: border-color 0.3s;
-  }
-  .metric-card:hover { border-color: var(--border-hi); }
+  /* METRICS BAR */
+  .metrics-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:0 36px;margin-bottom:24px}
+  .metric-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px;display:flex;align-items:center;gap:20px;backdrop-filter:blur(20px);transition:border-color 0.4s,box-shadow 0.4s,transform 0.2s;position:relative;overflow:hidden}
+  .metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.06),transparent)}
+  .metric-card:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+  .mc-cpu:hover{box-shadow:0 8px 32px var(--green-glow)}
+  .mc-ram:hover{box-shadow:0 8px 32px var(--blue-glow)}
+  .mc-lat:hover{box-shadow:0 8px 32px var(--purple-glow)}
 
-  /* SVG gauge ring */
-  .gauge-wrap { position: relative; flex-shrink: 0; }
-  .gauge-wrap svg { display: block; }
-  .gauge-track { fill: none; stroke: var(--border); stroke-width: 5; }
-  .gauge-fill  { fill: none; stroke-width: 5; stroke-linecap: round;
-                 transition: stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1), stroke 0.4s; }
-  .gauge-center {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px; font-weight: 600;
-  }
+  /* GAUGE */
+  .gauge-wrap{position:relative;flex-shrink:0}
+  .gauge-wrap svg{display:block}
+  .gauge-track{fill:none;stroke:rgba(255,255,255,0.05);stroke-width:5}
+  .gauge-glow{fill:none;stroke-width:11;stroke-linecap:round;opacity:0.12;transition:stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1);filter:blur(3px)}
+  .gauge-fill{fill:none;stroke-width:5;stroke-linecap:round;transition:stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1),stroke 0.4s;filter:drop-shadow(0 0 4px currentColor)}
+  .gauge-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600}
 
-  .metric-info { flex: 1; min-width: 0; }
-  .metric-label {
-    font-size: 11px; font-weight: 600; letter-spacing: 0.07em;
-    text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;
-  }
-  .metric-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 22px; font-weight: 600; line-height: 1.2;
-    transition: color 0.3s;
-  }
-  .metric-sub {
-    font-size: 11px; color: var(--text-muted); margin-top: 3px;
-  }
+  .metric-info{flex:1;min-width:0}
+  .metric-label{font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .metric-value{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:600;line-height:1.1;transition:color 0.3s}
+  .metric-sub{font-size:10.5px;color:var(--text-muted);margin-top:4px;font-family:'JetBrains Mono',monospace}
 
-  /* colour helpers */
-  .c-green  { color: var(--green); }
-  .c-blue   { color: var(--blue); }
-  .c-amber  { color: var(--amber); }
-  .c-red    { color: var(--red); }
-  .c-purple { color: var(--purple); }
+  /* MAIN GRID */
+  .section-divider{margin:0 36px 22px;height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent)}
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;padding:0 36px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:26px 28px;backdrop-filter:blur(20px);transition:border-color 0.4s;position:relative;overflow:hidden}
+  .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.07),transparent)}
+  .panel.active{border-color:rgba(77,168,255,0.4);box-shadow:0 0 40px rgba(77,168,255,0.06)}
+  .panel-title{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:18px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .panel-title-line{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
 
-  /* ── MAIN GRID ── */
-  .grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 20px;
-  }
+  /* TRANSCRIPT */
+  .transcript-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .wakeword-badge{display:flex;align-items:center;gap:6px;background:var(--green-dim);border:1px solid rgba(0,229,160,0.3);border-radius:8px;padding:4px 12px;font-family:'Orbitron',monospace;font-size:9px;font-weight:600;color:var(--green);letter-spacing:0.12em}
+  .live-transcript{min-height:90px;font-size:28px;font-weight:600;line-height:1.45;letter-spacing:-0.01em;transition:color 0.3s}
+  .live-transcript .placeholder{color:var(--text-dim);font-weight:400;font-size:15px;font-style:italic;font-family:'Space Grotesk',sans-serif}
+  .partial{color:var(--blue)}
+  .final{color:var(--text)}
+  .history-section{margin-top:26px}
+  .history{max-height:190px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  .history-item{padding:10px 16px;background:rgba(0,229,160,0.04);border-left:2px solid var(--green);border-radius:0 8px 8px 0;font-size:14px;animation:slideIn 0.25s ease;display:flex;align-items:center;gap:10px}
+  @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+  .history-item .ts{font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-size:10px;white-space:nowrap}
 
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 22px;
-    transition: border-color 0.3s;
-  }
-  .panel.active { border-color: var(--blue-dim); }
-  .panel-title {
-    font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.08em; color: var(--text-muted);
-    margin-bottom: 16px; font-weight: 600;
-  }
+  /* RIGHT PANEL */
+  .stat-row{display:flex;flex-direction:column;gap:10px}
+  .stat{display:flex;justify-content:space-between;align-items:center;padding:11px 16px;background:rgba(255,255,255,0.02);border-radius:var(--radius-sm);border:1px solid rgba(255,255,255,0.04)}
+  .stat-label{font-size:12px;color:var(--text-muted);font-weight:500}
+  .stat-val{font-size:15px;font-weight:600;font-family:'JetBrains Mono',monospace;text-align:right}
+  .stat-val.s-listening{color:var(--blue)}
+  .stat-val.s-idle{color:var(--text-muted)}
+  .stat-val.s-online{color:var(--green)}
 
-  /* ── TRANSCRIPT ── */
-  .live-transcript {
-    min-height: 80px; font-size: 26px; font-weight: 600;
-    line-height: 1.45; letter-spacing: -0.01em;
-    transition: color 0.3s;
-  }
-  .live-transcript .placeholder {
-    color: var(--text-dim); font-weight: 400; font-size: 16px; font-style: italic;
-  }
-  .partial { color: var(--blue); }
-  .final   { color: var(--text); }
+  /* LATENCY SPARK */
+  .latency-history{margin-top:22px}
+  .spark-labels{display:flex;justify-content:space-between;margin-bottom:12px}
+  .spark-stat{text-align:center}
+  .spark-stat-label{font-size:9.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px}
+  .spark-stat-val{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600}
+  .latency-bars{display:flex;align-items:flex-end;gap:3px;height:48px;background:rgba(255,255,255,0.02);border-radius:8px;padding:6px}
+  .lbar{flex:1;border-radius:3px 3px 0 0;background:linear-gradient(to top,var(--purple),rgba(199,125,255,0.4));opacity:0.45;transition:height 0.4s ease,opacity 0.2s;min-height:3px}
+  .lbar.latest{opacity:1;box-shadow:0 0 6px var(--purple)}
 
-  /* ── HISTORY ── */
-  .history {
-    margin-top: 22px; max-height: 200px; overflow-y: auto;
-    display: flex; flex-direction: column; gap: 8px;
-    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
-  }
-  .history-item {
-    padding: 10px 14px;
-    background: rgba(255,255,255,0.025);
-    border-left: 2px solid var(--green);
-    border-radius: 6px; font-size: 14px;
-    animation: slideIn 0.25s ease;
-  }
-  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
-  .history-item .ts {
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--text-muted); font-size: 11px; margin-right: 10px;
-  }
+  /* CONN WARNING */
+  .conn-warning{display:none;margin-top:16px;padding:12px 16px;background:var(--red-dim);border:1px solid rgba(255,87,87,0.4);border-radius:10px;font-size:12px;color:var(--red);font-family:'JetBrains Mono',monospace}
 
-  /* ── SIDE PANEL METRICS ── */
-  .stat-row { display: flex; flex-direction: column; gap: 14px; }
-  .stat {
-    display: flex; justify-content: space-between; align-items: center;
-    padding-bottom: 12px; border-bottom: 1px solid var(--border);
-  }
-  .stat:last-child { border-bottom: none; padding-bottom: 0; }
-  .stat-label { font-size: 13px; color: var(--text-muted); }
-  .stat-val   { font-size: 18px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
-  .stat-val.s-listening { color: var(--blue); }
-  .stat-val.s-idle      { color: var(--text-muted); }
-  .stat-val.s-online    { color: var(--green); }
-
-  /* ── BAR CHART for latency history ── */
-  .latency-history {
-    margin-top: 18px;
-  }
-  .latency-bars {
-    display: flex; align-items: flex-end; gap: 3px;
-    height: 40px; margin-top: 8px;
-  }
-  .lbar {
-    flex: 1; border-radius: 3px 3px 0 0;
-    background: var(--purple);
-    opacity: 0.6;
-    transition: height 0.4s ease, opacity 0.2s;
-    min-height: 3px;
-  }
-  .lbar.latest { opacity: 1; }
-
-  /* ── CONN WARNING ── */
-  .conn-warning {
-    display: none; margin-top: 16px;
-    padding: 10px 14px;
-    background: var(--red-dim);
-    border: 1px solid var(--red);
-    border-radius: 8px; font-size: 13px; color: var(--red);
-  }
+  /* COLOUR HELPERS */
+  .c-green{color:var(--green)}
+  .c-blue{color:var(--blue)}
+  .c-amber{color:var(--amber)}
+  .c-red{color:var(--red)}
+  .c-purple{color:var(--purple)}
 </style>
 </head>
 <body>
+<canvas id="starfield"></canvas>
 
-<!-- HEADER -->
-<div class="header">
-  <div class="logo">
-    <div class="logo-icon">N</div>
-    <div class="logo-text">NOVA <span class="sub">Live KWS + ASR Dashboard</span></div>
+<div class="app-wrap">
+
+<!-- MISSION BANNER -->
+<div class="mission-banner">
+  <div class="mission-badge">
+    <div class="isro-chip">ISRO &middot; SMART AUTOMATION</div>
+    <div class="ps-tag">Problem Statement <strong>#26172</strong> &mdash; Low Latency Edge Voice Activator</div>
   </div>
-  <div class="status-pill" id="statusPill">
-    <div class="dot" id="statusDot"></div>
-    <span id="statusText">Connecting…</span>
+  <div class="constraint-pills">
+    <div class="constraint-pill cp-ram">&lt;256 KB RAM</div>
+    <div class="constraint-pill cp-cpu">&lt;10% CPU idle</div>
+    <div class="constraint-pill cp-oss">Open-Source Only</div>
+    <div class="constraint-pill cp-kws">Custom KWS Model</div>
+  </div>
+</div>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-left">
+    <div class="nova-logotype">
+      <div class="nova-orb"><div class="nova-orb-letter">N</div></div>
+      <div class="nova-title">NOVA</div>
+    </div>
+    <div class="hero-subtitle">
+      Keyword Spotting on ESP32-S3 &middot; TFLite Micro &middot; Whisper ASR &middot; Real-time edge-to-cloud pipeline
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="clock-chip" id="clockChip">--:--:--</div>
+    <div class="status-pill" id="statusPill">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Connecting&hellip;</span>
+    </div>
+  </div>
+</div>
+
+<!-- CHALLENGE CONSTRAINT LIVE CARDS -->
+<div class="constraints-bar">
+  <div class="constraint-card">
+    <div class="constraint-icon">&#128190;</div>
+    <div>
+      <div class="constraint-title">RAM Constraint</div>
+      <div class="constraint-requirement c-blue" id="conRamReq">-- KB used</div>
+      <div class="constraint-note">Limit: 256 KB &middot; ESP32 internal SRAM</div>
+    </div>
+    <div class="pass-fail" id="conRamPass"></div>
+  </div>
+  <div class="constraint-card">
+    <div class="constraint-icon">&#9889;</div>
+    <div>
+      <div class="constraint-title">CPU Idle Constraint</div>
+      <div class="constraint-requirement c-green" id="conCpuReq">-- % load</div>
+      <div class="constraint-note">Limit: &lt;10% idle &middot; Dual-core SoC</div>
+    </div>
+    <div class="pass-fail" id="conCpuPass"></div>
+  </div>
+  <div class="constraint-card">
+    <div class="constraint-icon">&#128640;</div>
+    <div>
+      <div class="constraint-title">ASR Latency</div>
+      <div class="constraint-requirement c-purple" id="conLatReq">-- ms</div>
+      <div class="constraint-note">Keyword &rarr; Cloud ASR first token</div>
+    </div>
+    <div class="pass-fail" id="conLatPass"></div>
   </div>
 </div>
 
@@ -252,331 +236,349 @@
 <div class="metrics-bar">
 
   <!-- CPU -->
-  <div class="metric-card" id="cpuCard">
+  <div class="metric-card mc-cpu" id="cpuCard">
     <div class="gauge-wrap">
-      <svg width="64" height="64" viewBox="0 0 64 64">
-        <circle class="gauge-track" cx="32" cy="32" r="26"/>
-        <circle class="gauge-fill" id="cpuArc" cx="32" cy="32" r="26"
-                stroke="var(--green)"
-                stroke-dasharray="163.4"
-                stroke-dashoffset="163.4"
-                transform="rotate(-90 32 32)"/>
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle class="gauge-track" cx="36" cy="36" r="28"/>
+        <circle class="gauge-glow" id="cpuGlow" cx="36" cy="36" r="28"
+                stroke="var(--green)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
+        <circle class="gauge-fill" id="cpuArc" cx="36" cy="36" r="28"
+                stroke="var(--green)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
       </svg>
-      <div class="gauge-center c-green" id="cpuPct">—</div>
+      <div class="gauge-center c-green" id="cpuPct">--</div>
     </div>
     <div class="metric-info">
-      <div class="metric-label">CPU Usage</div>
-      <div class="metric-value c-green" id="cpuVal">— %</div>
-      <div class="metric-sub" id="cpuSub">idle</div>
+      <div class="metric-label"><span id="cpuLabel">ESP32 CPU USAGE</span></div>
+      <div class="metric-value c-green" id="cpuVal">-- %</div>
+      <div class="metric-sub" id="cpuSub">Dual-Core 240 MHz</div>
     </div>
   </div>
 
   <!-- RAM -->
-  <div class="metric-card" id="ramCard">
+  <div class="metric-card mc-ram" id="ramCard">
     <div class="gauge-wrap">
-      <svg width="64" height="64" viewBox="0 0 64 64">
-        <circle class="gauge-track" cx="32" cy="32" r="26"/>
-        <circle class="gauge-fill" id="ramArc" cx="32" cy="32" r="26"
-                stroke="var(--blue)"
-                stroke-dasharray="163.4"
-                stroke-dashoffset="163.4"
-                transform="rotate(-90 32 32)"/>
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle class="gauge-track" cx="36" cy="36" r="28"/>
+        <circle class="gauge-glow" id="ramGlow" cx="36" cy="36" r="28"
+                stroke="var(--blue)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
+        <circle class="gauge-fill" id="ramArc" cx="36" cy="36" r="28"
+                stroke="var(--blue)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
       </svg>
-      <div class="gauge-center c-blue" id="ramPct">—</div>
+      <div class="gauge-center c-blue" id="ramPct">--</div>
     </div>
     <div class="metric-info">
-      <div class="metric-label">RAM Usage</div>
-      <div class="metric-value c-blue" id="ramVal">— MB</div>
-      <div class="metric-sub" id="ramSub">of — GB</div>
+      <div class="metric-label"><span id="ramLabel">ESP32 RAM USAGE</span></div>
+      <div class="metric-value c-blue" id="ramVal">-- KB</div>
+      <div class="metric-sub" id="ramSub">of -- KB SRAM</div>
     </div>
   </div>
 
   <!-- ASR LATENCY -->
-  <div class="metric-card" id="latCard">
+  <div class="metric-card mc-lat" id="latCard">
     <div class="gauge-wrap">
-      <svg width="64" height="64" viewBox="0 0 64 64">
-        <circle class="gauge-track" cx="32" cy="32" r="26"/>
-        <circle class="gauge-fill" id="latArc" cx="32" cy="32" r="26"
-                stroke="var(--purple)"
-                stroke-dasharray="163.4"
-                stroke-dashoffset="163.4"
-                transform="rotate(-90 32 32)"/>
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle class="gauge-track" cx="36" cy="36" r="28"/>
+        <circle class="gauge-glow" id="latGlow" cx="36" cy="36" r="28"
+                stroke="var(--purple)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
+        <circle class="gauge-fill" id="latArc" cx="36" cy="36" r="28"
+                stroke="var(--purple)" stroke-dasharray="175.9" stroke-dashoffset="175.9"
+                transform="rotate(-90 36 36)"/>
       </svg>
-      <div class="gauge-center c-purple" id="latPctLabel">—</div>
+      <div class="gauge-center c-purple" id="latPctLabel">--</div>
     </div>
     <div class="metric-info">
-      <div class="metric-label">ASR Latency</div>
-      <div class="metric-value c-purple" id="latVal">— ms</div>
-      <div class="metric-sub" id="latSub">trigger → first word</div>
+      <div class="metric-label">ASR LATENCY</div>
+      <div class="metric-value c-purple" id="latVal">-- ms</div>
+      <div class="metric-sub" id="latSub">trigger &rarr; first word</div>
     </div>
   </div>
 
 </div>
+
+<div class="section-divider"></div>
 
 <!-- MAIN GRID -->
 <div class="grid">
 
   <!-- LEFT: Transcript + History -->
   <div class="panel" id="transcriptPanel">
-    <div class="panel-title">Live Transcript</div>
-    <div class="live-transcript" id="transcript">
-      <span class="placeholder">Waiting for "NOVA" to be detected…</span>
+    <div class="transcript-header">
+      <div class="panel-title" style="margin-bottom:0">Live Transcript <div class="panel-title-line"></div></div>
+      <div class="wakeword-badge">&#9679; NOVA</div>
     </div>
-    <div class="panel-title" style="margin-top:24px;">History</div>
-    <div class="history" id="history"></div>
+    <div class="live-transcript" id="transcript">
+      <span class="placeholder">Waiting for &ldquo;NOVA&rdquo; to be detected&hellip;</span>
+    </div>
+    <div class="history-section">
+      <div class="panel-title" style="margin-bottom:14px">Recognition History <div class="panel-title-line"></div></div>
+      <div class="history" id="history"></div>
+    </div>
   </div>
 
   <!-- RIGHT: System State + Latency Bars -->
   <div class="panel" id="statePanel">
-    <div class="panel-title">System State</div>
+    <div class="panel-title">System State <div class="panel-title-line"></div></div>
     <div class="stat-row">
       <div class="stat">
-        <span class="stat-label">Status</span>
-        <span class="stat-val" id="stateValue">—</span>
+        <span class="stat-label">Device Status</span>
+        <span class="stat-val" id="stateValue">--</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Last event</span>
-        <span class="stat-val" id="lastEventValue" style="font-size:13px;">—</span>
+        <span class="stat-label">Last Event</span>
+        <span class="stat-val" id="lastEventValue" style="font-size:10px;max-width:140px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">--</span>
       </div>
       <div class="stat">
         <span class="stat-label">Utterances</span>
-        <span class="stat-val" id="countValue">0</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Best latency</span>
-        <span class="stat-val c-purple" id="bestLatVal">—</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Avg latency</span>
-        <span class="stat-val c-purple" id="avgLatVal">—</span>
+        <span class="stat-val c-green" id="countValue">0</span>
       </div>
     </div>
 
-    <!-- Mini latency spark chart -->
     <div class="latency-history">
-      <div class="panel-title" style="margin-bottom:4px;">Latency History</div>
-      <div class="latency-bars" id="latBars">
-        <!-- filled by JS -->
+      <div class="panel-title" style="margin-bottom:10px">Latency History <div class="panel-title-line"></div></div>
+      <div class="spark-labels">
+        <div class="spark-stat">
+          <div class="spark-stat-label">Best</div>
+          <div class="spark-stat-val c-green" id="bestLatVal">-- ms</div>
+        </div>
+        <div class="spark-stat">
+          <div class="spark-stat-label">Average</div>
+          <div class="spark-stat-val c-purple" id="avgLatVal">-- ms</div>
+        </div>
+        <div class="spark-stat">
+          <div class="spark-stat-label">Samples</div>
+          <div class="spark-stat-val" id="latSamplesVal">0</div>
+        </div>
       </div>
+      <div class="latency-bars" id="latBars"></div>
     </div>
 
     <div class="conn-warning" id="connWarning">
-      Not connected — make sure server.py is running on ws://127.0.0.1:8765
+      &#9888; Not connected &mdash; make sure server.py is running on ws://127.0.0.1:8765
     </div>
   </div>
 
 </div>
+</div><!-- /.app-wrap -->
 
 <script>
-const SERVER_URL = "ws://127.0.0.1:8765";
-const CIRC = 163.4; // 2π × 26
+// Starfield
+(function(){
+  const canvas=document.getElementById('starfield');
+  const ctx=canvas.getContext('2d');
+  let stars=[];
+  function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+  function init(){stars=[];for(let i=0;i<180;i++){stars.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*1.2+0.2,a:Math.random(),da:(Math.random()-0.5)*0.003,vy:Math.random()*0.03});}}
+  function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);stars.forEach(s=>{s.a+=s.da;if(s.a<=0||s.a>=1)s.da*=-1;s.y+=s.vy;if(s.y>canvas.height)s.y=0;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fillStyle=`rgba(200,230,255,${s.a*0.55})`;ctx.fill();});requestAnimationFrame(draw);}
+  resize();init();draw();
+  window.addEventListener('resize',()=>{resize();init();});
+})();
 
-let finalCount = 0;
-let latencyHistory = [];   // last N latency readings (ms)
-const MAX_LAT_BARS = 16;
+// Clock
+const clockEl=document.getElementById('clockChip');
+function updateClock(){clockEl.textContent=new Date().toLocaleTimeString('en-IN',{hour12:false});}
+updateClock();setInterval(updateClock,1000);
 
-// ── DOM refs ──
-const statusDot      = document.getElementById("statusDot");
-const statusText     = document.getElementById("statusText");
-const statusPill     = document.getElementById("statusPill");
-const transcriptEl   = document.getElementById("transcript");
-const historyEl      = document.getElementById("history");
-const stateValueEl   = document.getElementById("stateValue");
-const lastEventEl    = document.getElementById("lastEventValue");
-const countValueEl   = document.getElementById("countValue");
-const connWarning    = document.getElementById("connWarning");
-const transcriptPanel= document.getElementById("transcriptPanel");
+// Dashboard
+const SERVER_URL="ws://127.0.0.1:8765";
+const CIRC=2*Math.PI*28; // r=28 ≈ 175.93
 
-// Metric card elements
-const cpuArc    = document.getElementById("cpuArc");
-const cpuPct    = document.getElementById("cpuPct");
-const cpuVal    = document.getElementById("cpuVal");
-const cpuSub    = document.getElementById("cpuSub");
-const ramArc    = document.getElementById("ramArc");
-const ramPct    = document.getElementById("ramPct");
-const ramVal    = document.getElementById("ramVal");
-const ramSub    = document.getElementById("ramSub");
-const latArc    = document.getElementById("latArc");
+let finalCount=0;
+let latencyHistory=[];
+const MAX_LAT_BARS=16;
+
+const statusDot      =document.getElementById("statusDot");
+const statusText     =document.getElementById("statusText");
+const statusPill     =document.getElementById("statusPill");
+const transcriptEl   =document.getElementById("transcript");
+const historyEl      =document.getElementById("history");
+const stateValueEl   =document.getElementById("stateValue");
+const lastEventEl    =document.getElementById("lastEventValue");
+const countValueEl   =document.getElementById("countValue");
+const connWarning    =document.getElementById("connWarning");
+const transcriptPanel=document.getElementById("transcriptPanel");
+
+const cpuArc    =document.getElementById("cpuArc");
+const cpuGlow   =document.getElementById("cpuGlow");
+const cpuPct    =document.getElementById("cpuPct");
+const cpuVal    =document.getElementById("cpuVal");
+const cpuSub    =document.getElementById("cpuSub");
+const cpuLabel  =document.getElementById("cpuLabel");
+const ramArc    =document.getElementById("ramArc");
+const ramGlow   =document.getElementById("ramGlow");
+const ramPct    =document.getElementById("ramPct");
+const ramVal    =document.getElementById("ramVal");
+const ramSub    =document.getElementById("ramSub");
+const ramLabel  =document.getElementById("ramLabel");
+const latArc    =document.getElementById("latArc");
+const latGlow   =document.getElementById("latGlow");
 const latPctLabel=document.getElementById("latPctLabel");
-const latVal    = document.getElementById("latVal");
-const latSub    = document.getElementById("latSub");
-const bestLatEl = document.getElementById("bestLatVal");
-const avgLatEl  = document.getElementById("avgLatVal");
-const latBarsEl = document.getElementById("latBars");
+const latVal    =document.getElementById("latVal");
+const latSub    =document.getElementById("latSub");
+const bestLatEl =document.getElementById("bestLatVal");
+const avgLatEl  =document.getElementById("avgLatVal");
+const latBarsEl =document.getElementById("latBars");
+const latSamplesEl=document.getElementById("latSamplesVal");
 
-// ── Helpers ──
-function setDot(state) {
-  statusDot.className = "dot " + state;
-  statusPill.className = "status-pill" + (state === "listening" ? " active" : "");
+const conRamReq =document.getElementById("conRamReq");
+const conRamPass=document.getElementById("conRamPass");
+const conCpuReq =document.getElementById("conCpuReq");
+const conCpuPass=document.getElementById("conCpuPass");
+const conLatReq =document.getElementById("conLatReq");
+const conLatPass=document.getElementById("conLatPass");
+
+function setDot(state){
+  statusDot.className="dot "+state;
+  statusPill.className="status-pill"+(state==="listening"?" active":"");
 }
 
-/** Update a ring gauge. pct 0-100, max offset = CIRC means empty. */
-function setGauge(arcEl, pct) {
-  const offset = CIRC - (CIRC * Math.min(pct, 100) / 100);
-  arcEl.style.strokeDashoffset = offset.toFixed(1);
+function setGauge(arcEl,glowEl,pct){
+  const offset=CIRC-(CIRC*Math.min(pct,100)/100);
+  arcEl.style.strokeDashoffset=offset.toFixed(1);
+  if(glowEl)glowEl.style.strokeDashoffset=offset.toFixed(1);
 }
 
-/** Pick a colour class based on CPU/RAM percentage. */
-function levelColor(pct) {
-  if (pct >= 85) return "var(--red)";
-  if (pct >= 60) return "var(--amber)";
-  return null; // use default
+function levelColor(pct){
+  if(pct>=85)return"var(--red)";
+  if(pct>=60)return"var(--amber)";
+  return null;
 }
 
-/** Render the mini latency bar chart. */
-function renderLatBars() {
-  if (!latencyHistory.length) return;
-  const maxMs = Math.max(...latencyHistory, 1);
-  latBarsEl.innerHTML = "";
-  latencyHistory.forEach((ms, i) => {
-    const bar = document.createElement("div");
-    bar.className = "lbar" + (i === latencyHistory.length - 1 ? " latest" : "");
-    bar.style.height = Math.max(4, (ms / maxMs) * 40) + "px";
-    bar.title = ms.toFixed(0) + " ms";
+function renderLatBars(){
+  if(!latencyHistory.length)return;
+  const maxMs=Math.max(...latencyHistory,1);
+  latBarsEl.innerHTML="";
+  latencyHistory.forEach((ms,i)=>{
+    const bar=document.createElement("div");
+    bar.className="lbar"+(i===latencyHistory.length-1?" latest":"");
+    bar.style.height=Math.max(4,(ms/maxMs)*36)+"px";
+    bar.title=ms.toFixed(0)+" ms";
     latBarsEl.appendChild(bar);
   });
+  if(latSamplesEl)latSamplesEl.textContent=latencyHistory.length;
 }
 
-/** Handle incoming metrics broadcast. */
-function handleMetrics(d) {
-  // CPU
-  if (d.cpu_pct !== null && d.cpu_pct !== undefined) {
-    const c = d.cpu_pct;
-    setGauge(cpuArc, c);
-    cpuPct.textContent = c.toFixed(0) + "%";
-    cpuVal.textContent = c.toFixed(1) + " %";
-    const col = levelColor(c);
-    cpuArc.style.stroke = col || "var(--green)";
-    cpuPct.style.color  = col || "var(--green)";
-    cpuVal.style.color  = col || "var(--green)";
-    cpuSub.textContent = c < 20 ? "idle" : c < 60 ? "moderate" : "high";
+function handleMetrics(d){
+  const isESP=d.device==="ESP32-S3"||d.ram_used_kb!==undefined;
+
+  if(d.cpu_pct!==null&&d.cpu_pct!==undefined){
+    const c=d.cpu_pct;
+    setGauge(cpuArc,cpuGlow,c);
+    cpuPct.textContent=c.toFixed(0)+"%";
+    cpuVal.textContent=c.toFixed(1)+" %";
+    const col=levelColor(c);
+    cpuArc.style.stroke=col||"var(--green)";
+    if(cpuGlow)cpuGlow.style.stroke=col||"var(--green)";
+    cpuPct.style.color=col||"var(--green)";
+    cpuVal.style.color=col||"var(--green)";
+    if(isESP){
+      if(cpuLabel)cpuLabel.textContent="ESP32 CPU USAGE";
+      cpuSub.textContent=d.infer_time_ms?`KWS: ${d.infer_time_ms}ms / slice`:"Dual-Core 240MHz";
+      if(conCpuReq)conCpuReq.textContent=c.toFixed(1)+"% load";
+      if(conCpuPass)conCpuPass.className="pass-fail "+(c<10?"pass":"fail");
+    } else {
+      if(cpuLabel)cpuLabel.textContent="PC CPU USAGE";
+      cpuSub.textContent=c<20?"idle":c<60?"moderate":"high";
+    }
   }
 
-  // RAM
-  if (d.ram_pct !== null && d.ram_pct !== undefined) {
-    const rp = d.ram_pct;
-    const used = d.ram_used_mb;
-    const total = d.ram_total_mb;
-    setGauge(ramArc, rp);
-    ramPct.textContent = rp.toFixed(0) + "%";
-    if (used >= 1024)
-      ramVal.textContent = (used / 1024).toFixed(2) + " GB";
-    else
-      ramVal.textContent = used.toFixed(0) + " MB";
-    const col = levelColor(rp);
-    ramArc.style.stroke = col || "var(--blue)";
-    ramPct.style.color  = col || "var(--blue)";
-    ramVal.style.color  = col || "var(--blue)";
-    ramSub.textContent = "of " + (total / 1024).toFixed(1) + " GB";
+  if(d.ram_pct!==null&&d.ram_pct!==undefined){
+    const rp=d.ram_pct;
+    setGauge(ramArc,ramGlow,rp);
+    ramPct.textContent=rp.toFixed(0)+"%";
+    if(isESP){
+      if(ramLabel)ramLabel.textContent="ESP32 RAM USAGE";
+      const usedKb=d.ram_used_kb||0;
+      const totalKb=d.ram_total_kb||320;
+      ramVal.textContent=usedKb+" KB";
+      ramSub.textContent="of "+totalKb+" KB SRAM";
+      if(conRamReq)conRamReq.textContent=usedKb+" KB used";
+      if(conRamPass)conRamPass.className="pass-fail "+(usedKb<256?"pass":"fail");
+    } else {
+      if(ramLabel)ramLabel.textContent="PC RAM USAGE";
+      const used=d.ram_used_mb;const total=d.ram_total_mb;
+      if(used>=1024)ramVal.textContent=(used/1024).toFixed(2)+" GB";
+      else ramVal.textContent=used.toFixed(0)+" MB";
+      ramSub.textContent="of "+(total/1024).toFixed(1)+" GB";
+    }
+    const col=levelColor(rp);
+    ramArc.style.stroke=col||"var(--blue)";
+    if(ramGlow)ramGlow.style.stroke=col||"var(--blue)";
+    ramPct.style.color=col||"var(--blue)";
+    ramVal.style.color=col||"var(--blue)";
   }
 
-  // Latency
-  if (d.latency_ms !== null && d.latency_ms !== undefined) {
-    const ms = d.latency_ms;
-    latVal.textContent = ms.toFixed(0) + " ms";
-
-    // Gauge: treat 0–2000 ms as the full arc range
-    const latPct = Math.min(ms / 2000 * 100, 100);
-    setGauge(latArc, latPct);
-    latPctLabel.textContent = ms.toFixed(0);
-
-    // Colour: <400ms green, 400-800 amber, >800 red
-    const lc = ms < 400 ? "var(--green)" : ms < 800 ? "var(--amber)" : "var(--red)";
-    latArc.style.stroke      = lc;
-    latPctLabel.style.color  = lc;
-    latVal.style.color       = lc;
-
-    // Update history
+  if(d.latency_ms!==null&&d.latency_ms!==undefined){
+    const ms=d.latency_ms;
+    latVal.textContent=ms.toFixed(0)+" ms";
+    const latPct=Math.min(ms/2000*100,100);
+    setGauge(latArc,latGlow,latPct);
+    latPctLabel.textContent=ms.toFixed(0);
+    const lc=ms<400?"var(--green)":ms<800?"var(--amber)":"var(--red)";
+    latArc.style.stroke=lc;
+    if(latGlow)latGlow.style.stroke=lc;
+    latPctLabel.style.color=lc;
+    latVal.style.color=lc;
     latencyHistory.push(ms);
-    if (latencyHistory.length > MAX_LAT_BARS) latencyHistory.shift();
+    if(latencyHistory.length>MAX_LAT_BARS)latencyHistory.shift();
     renderLatBars();
-
-    // Best / avg
-    const best = Math.min(...latencyHistory);
-    const avg  = latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length;
-    bestLatEl.textContent = best.toFixed(0) + " ms";
-    avgLatEl.textContent  = avg.toFixed(0) + " ms";
+    const best=Math.min(...latencyHistory);
+    const avg=latencyHistory.reduce((a,b)=>a+b,0)/latencyHistory.length;
+    bestLatEl.textContent=best.toFixed(0)+" ms";
+    avgLatEl.textContent=avg.toFixed(0)+" ms";
+    if(conLatReq)conLatReq.textContent=ms.toFixed(0)+" ms";
+    if(conLatPass)conLatPass.className="pass-fail "+(ms<800?"pass":"fail");
   }
 }
 
-// ── WebSocket ──
-function connect() {
-  const ws = new WebSocket(SERVER_URL);
-
-  ws.onopen = () => {
+function connect(){
+  const ws=new WebSocket(SERVER_URL);
+  ws.onopen=()=>{
     ws.send("register_dashboard");
-    statusText.textContent = "Connected";
+    statusText.textContent="Connected";
     setDot("online");
-    connWarning.style.display = "none";
+    connWarning.style.display="none";
   };
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    const now  = new Date().toLocaleTimeString();
-
-    if (data.type === "metrics") {
-      handleMetrics(data);
-      return;
+  ws.onmessage=(event)=>{
+    const data=JSON.parse(event.data);
+    const now=new Date().toLocaleTimeString();
+    if(data.type==="metrics"){handleMetrics(data);return;}
+    if(data.type==="status"){
+      stateValueEl.textContent=data.text;
+      stateValueEl.className="stat-val s-"+data.text;
+      lastEventEl.textContent="status: "+data.text+" @ "+now;
+      if(data.text==="listening"){setDot("listening");statusText.textContent="Streaming audio";transcriptPanel.classList.add("active");}
+      else if(data.text==="idle"){setDot("online");statusText.textContent="Connected";transcriptPanel.classList.remove("active");}
     }
-
-    if (data.type === "status") {
-      stateValueEl.textContent  = data.text;
-      stateValueEl.className    = "stat-val s-" + data.text;
-      lastEventEl.textContent   = "status: " + data.text + " @ " + now;
-      if (data.text === "listening") {
-        setDot("listening");
-        statusText.textContent = "Streaming audio";
-        transcriptPanel.classList.add("active");
-      } else if (data.text === "idle") {
-        setDot("online");
-        statusText.textContent = "Connected";
-        transcriptPanel.classList.remove("active");
-      }
+    if(data.type==="partial"){
+      transcriptEl.innerHTML='<span class="partial">'+data.text+'</span>';
+      lastEventEl.textContent="partial @ "+now;
     }
-
-    if (data.type === "partial") {
-      transcriptEl.innerHTML = '<span class="partial">' + data.text + '</span>';
-      lastEventEl.textContent = "partial @ " + now;
-    }
-
-    if (data.type === "final") {
-      const langBadge = data.language ? ' <span style="font-size:12px; padding:2px 8px; border-radius:4px; background:var(--purple-dim); color:var(--purple); margin-left:8px; font-weight:normal; display:inline-block; vertical-align:middle;">' + data.language + '</span>' : '';
-      transcriptEl.innerHTML = '<span class="final">' + data.text + '</span>' + langBadge;
-      lastEventEl.textContent = "final @ " + now;
-
-      const item = document.createElement("div");
-      item.className = "history-item";
-      const itemLang = data.language ? ' <span style="color:var(--purple); font-size:11px; font-weight:600; margin-left:6px;">[' + data.language + ']</span>' : '';
-      item.innerHTML = '<span class="ts">' + now + '</span>' + data.text + itemLang;
+    if(data.type==="final"){
+      const langBadge=data.language?'<span style="font-size:12px;padding:2px 8px;border-radius:4px;background:var(--purple-dim);color:var(--purple);margin-left:8px;font-weight:normal;display:inline-block;vertical-align:middle;">'+data.language+'</span>':'';
+      transcriptEl.innerHTML='<span class="final">'+data.text+'</span>'+langBadge;
+      lastEventEl.textContent="final @ "+now;
+      const item=document.createElement("div");
+      item.className="history-item";
+      const itemLang=data.language?'<span style="color:var(--purple);font-size:11px;font-weight:600;margin-left:6px;">['+data.language+']</span>':'';
+      item.innerHTML='<span class="ts">'+now+'</span>'+data.text+itemLang;
       historyEl.prepend(item);
-
       finalCount++;
-      countValueEl.textContent = finalCount;
+      countValueEl.textContent=finalCount;
     }
   };
-
-  ws.onclose = () => {
-    statusText.textContent = "Disconnected — retrying…";
-    setDot("idle");
-    connWarning.style.display = "block";
-    transcriptPanel.classList.remove("active");
-    setTimeout(connect, 2000);
-  };
-
-  ws.onerror = () => ws.close();
+  ws.onclose=()=>{statusText.textContent="Disconnected — retrying…";setDot("idle");connWarning.style.display="block";transcriptPanel.classList.remove("active");setTimeout(connect,2000);};
+  ws.onerror=()=>ws.close();
 }
 
-// Pre-fill latency bar placeholders
-for (let i = 0; i < MAX_LAT_BARS; i++) {
-  const b = document.createElement("div");
-  b.className = "lbar";
-  b.style.height = "3px";
-  b.style.opacity = "0.2";
-  latBarsEl.appendChild(b);
+for(let i=0;i<MAX_LAT_BARS;i++){
+  const b=document.createElement("div");b.className="lbar";b.style.height="3px";b.style.opacity="0.12";latBarsEl.appendChild(b);
 }
-
 connect();
 </script>
-
 </body>
 </html>

@@ -155,25 +155,18 @@ public:
      */
     static int roll(float *input_array, size_t input_array_size, int shift) {
         if (shift < 0) {
-            shift = input_array_size + shift;
+            shift = (int)input_array_size + shift;
         }
-
-        if (shift == 0) {
+        if (shift <= 0 || (size_t)shift >= input_array_size) {
             return EIDSP_OK;
         }
-
-        // so we need to allocate a buffer of the size of shift...
-        EI_DSP_MATRIX(shift_matrix, 1, shift);
-
-        // we copy from the end of the buffer into the shift buffer
-        memcpy(shift_matrix.buffer, input_array + input_array_size - shift, shift * sizeof(float));
-
-        // now we do a memmove to shift the array
-        memmove(input_array + shift, input_array, (input_array_size - shift) * sizeof(float));
-
-        // and copy the shift buffer back to the beginning of the array
-        memcpy(input_array, shift_matrix.buffer, shift * sizeof(float));
-
+        // In-place 3-step reversal (0 heap allocations required!)
+        size_t s = 0, e = input_array_size - 1;
+        while (s < e) { float t = input_array[s]; input_array[s] = input_array[e]; input_array[e] = t; s++; e--; }
+        s = 0; e = (size_t)shift - 1;
+        while (s < e) { float t = input_array[s]; input_array[s] = input_array[e]; input_array[e] = t; s++; e--; }
+        s = (size_t)shift; e = input_array_size - 1;
+        while (s < e) { float t = input_array[s]; input_array[s] = input_array[e]; input_array[e] = t; s++; e--; }
         return EIDSP_OK;
     }
 

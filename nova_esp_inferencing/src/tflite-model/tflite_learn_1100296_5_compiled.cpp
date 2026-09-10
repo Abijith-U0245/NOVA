@@ -32,6 +32,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef ESP32
+#include "esp_heap_caps.h"
+#endif
 #include "edge-impulse-sdk/tensorflow/lite/c/builtin_op_data.h"
 #include "edge-impulse-sdk/tensorflow/lite/c/common.h"
 #include "edge-impulse-sdk/tensorflow/lite/micro/micro_mutable_op_resolver.h"
@@ -84,7 +87,7 @@ extern void ei_printf(const char *format, ...);
 #endif // EI_MAX_SCRATCH_BUFFER_COUNT
 
 #ifndef EI_MAX_OVERFLOW_BUFFER_COUNT
-#define EI_MAX_OVERFLOW_BUFFER_COUNT 10
+#define EI_MAX_OVERFLOW_BUFFER_COUNT 10000
 #endif // EI_MAX_OVERFLOW_BUFFER_COUNT
 
 using namespace tflite;
@@ -94,9 +97,9 @@ using namespace tflite::ops::micro;
 namespace {
 
 #if defined(EI_CLASSIFIER_ALLOCATION_STATIC_HIMAX) || defined(EI_CLASSIFIER_ALLOCATION_STATIC_HIMAX_GNU)
-constexpr int kTensorArenaSize = 174464;
+constexpr int kTensorArenaSize = 524288;
 #else
-constexpr int kTensorArenaSize = 173440;
+constexpr int kTensorArenaSize = 524288;
 #endif
 
 #if defined(EI_CLASSIFIER_ALLOCATION_STATIC)
@@ -5778,26 +5781,28 @@ static void init_tflite_eval_tensor(int i, TfLiteEvalTensor *tensor) {
 
 static void* overflow_buffers[EI_MAX_OVERFLOW_BUFFER_COUNT];
 static size_t overflow_buffers_ix = 0;
+
 static void * AllocatePersistentBufferImpl(struct TfLiteContext* ctx,
                                        size_t bytes) {
   void *ptr;
   uint32_t align_bytes = (bytes % 16) ? 16 - (bytes % 16) : 0;
 
   if (current_location - (bytes + align_bytes) < tensor_boundary) {
-    if (overflow_buffers_ix > EI_MAX_OVERFLOW_BUFFER_COUNT - 1) {
-      ei_printf("ERR: Failed to allocate persistent buffer of size %d, does not fit in tensor arena and reached EI_MAX_OVERFLOW_BUFFER_COUNT\n",
-        (int)bytes);
-      return NULL;
+#ifdef ESP32
+    ptr = heap_caps_calloc(bytes, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!ptr) {
+      ptr = heap_caps_calloc(bytes, 1, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
-
-    // OK, this will look super weird, but.... we have CMSIS-NN buffers which
-    // we cannot calculate beforehand easily.
+#else
     ptr = ei_calloc(bytes, 1);
+#endif
     if (ptr == NULL) {
       ei_printf("ERR: Failed to allocate persistent buffer of size %d\n", (int)bytes);
       return NULL;
     }
-    overflow_buffers[overflow_buffers_ix++] = ptr;
+    if (overflow_buffers_ix < EI_MAX_OVERFLOW_BUFFER_COUNT) {
+      overflow_buffers[overflow_buffers_ix++] = ptr;
+    }
     return ptr;
   }
 
@@ -5848,7 +5853,7 @@ static TfLiteStatus RequestScratchBufferInArenaImpl(struct TfLiteContext* ctx, s
 }
 
 static void* GetScratchBufferImpl(struct TfLiteContext* ctx, int buffer_idx) {
-  if (buffer_idx > (int)scratch_buffers_ix) {
+  if (buffer_idx < 0 || buffer_idx >= (int)EI_MAX_SCRATCH_BUFFER_COUNT) {
     return NULL;
   }
   return scratch_buffers[buffer_idx].ptr;
@@ -5950,30 +5955,48 @@ class EonMicroContext : public MicroContext {
 
 } // namespace
 
+static bool model_initialized = false;
+static EonMicroContext static_micro_context;
+
 TfLiteStatus tflite_learn_1100296_5_init( void*(*alloc_fnc)(size_t,size_t) ) {
 #ifdef EI_CLASSIFIER_ALLOCATION_HEAP
-  tensor_arena = (uint8_t*) alloc_fnc(16, kTensorArenaSize);
   if (!tensor_arena) {
-    ei_printf("ERR: failed to allocate tensor arena\n");
-    return kTfLiteError;
+    // IMPORTANT: esp-nn SIMD kernels (DepthwiseConv, Conv2D) require the tensor
+    // arena to be in INTERNAL SRAM with 16-byte alignment. Allocating in PSRAM
+    // causes all layers after op0 to silently produce frozen/wrong output.
+    // Always try internal SRAM first; only fall back to PSRAM if truly out of space.
+    tensor_arena = (uint8_t*) heap_caps_aligned_alloc(16, kTensorArenaSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!tensor_arena) {
+      ei_printf("WARN: internal SRAM arena alloc failed, falling back to PSRAM (inference may be incorrect)\n");
+      tensor_arena = (uint8_t*) heap_caps_aligned_alloc(16, kTensorArenaSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!tensor_arena) {
+      ei_printf("ERR: failed to allocate tensor arena\n");
+      return kTfLiteError;
+    }
   }
 #else
   memset(tensor_arena, 0, kTensorArenaSize);
 #endif
-  tensor_boundary = tensor_arena;
-  current_location = tensor_arena + kTensorArenaSize;
 
-  EonMicroContext micro_context_;
-  
-  // Set microcontext as the context ptr
-  ctx.impl_ = static_cast<void*>(&micro_context_);
-  // Setup tflitecontext functions
+  // Always bind ctx pointers to permanent static micro context
+  ctx.impl_ = static_cast<void*>(&static_micro_context);
   ctx.AllocatePersistentBuffer = &AllocatePersistentBufferImpl;
   ctx.RequestScratchBufferInArena = &RequestScratchBufferInArenaImpl;
   ctx.GetScratchBuffer = &GetScratchBufferImpl;
   ctx.GetTensor = &GetTensorImpl;
   ctx.GetEvalTensor = &GetEvalTensorImpl;
   ctx.ReportError = &MicroContextReportOpError;
+  ctx.tensors_size = 175;
+
+  if (model_initialized) {
+    return kTfLiteOk;
+  }
+
+  tensor_boundary = tensor_arena;
+  current_location = tensor_arena + kTensorArenaSize;
+  overflow_buffers_ix = 0;
+  scratch_buffers_ix = 0;
 
   ctx.tensors_size = 175;
   for (size_t i = 0; i < 175; ++i) {
@@ -6024,6 +6047,7 @@ TfLiteStatus tflite_learn_1100296_5_init( void*(*alloc_fnc)(size_t,size_t) ) {
   }
   current_subgraph_index = 0;
 
+  model_initialized = true;
   return kTfLiteOk;
 }
 
@@ -6034,14 +6058,17 @@ TfLiteStatus tflite_learn_1100296_5_input(int index, TfLiteTensor *tensor) {
 
 TfLiteStatus tflite_learn_1100296_5_output(int index, TfLiteTensor *tensor) {
   init_tflite_tensor(out_tensor_indices[index], tensor);
+  model_initialized = true;
   return kTfLiteOk;
 }
 
 TfLiteStatus tflite_learn_1100296_5_invoke() {
+
   for (size_t i = 0; i < 66; ++i) {
     ResetTensors();
 
     TfLiteStatus status = registrations[used_ops[i]].invoke(&ctx, &tflNodes[i]);
+
 
 #if EI_CLASSIFIER_PRINT_STATE
     ei_printf("layer %lu\n", i);
@@ -6103,24 +6130,15 @@ TfLiteStatus tflite_learn_1100296_5_invoke() {
 #endif // EI_CLASSIFIER_PRINT_STATE
 
     if (status != kTfLiteOk) {
+      ei_printf("ERR: layer %d returned %d\n", (int)i, (int)status);
       return status;
     }
   }
+
   return kTfLiteOk;
 }
 
 TfLiteStatus tflite_learn_1100296_5_reset( void (*free_fnc)(void* ptr) ) {
-#ifdef EI_CLASSIFIER_ALLOCATION_HEAP
-  free_fnc(tensor_arena);
-#endif
-
-  // scratch buffers are allocated within the arena, so just reset the counter so memory can be reused
-  scratch_buffers_ix = 0;
-
-  // overflow buffers are on the heap, so free them first
-  for (size_t ix = 0; ix < overflow_buffers_ix; ix++) {
-    ei_free(overflow_buffers[ix]);
-  }
-  overflow_buffers_ix = 0;
+  // In continuous inferencing, preserve scratch buffers and arena across slices
   return kTfLiteOk;
 }

@@ -79,16 +79,26 @@
 #endif // CPU_ARC
 #endif // EI_CLASSIFIER_TFLITE_ENABLE_ARC
 
-#ifndef EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN
-    // By default, if one of the CONFIG_IDF_TARGET_ESP32 is defined, it enables ESP-NN. 
-    // This can be overridden by defining EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN to 0 if the user doesn't want to use ESP-NN for some reason.
-    #if defined(ESP32)|| defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CONFIG_IDF_TARGET_ESP32C3)
-        #include "sdkconfig.h"
-        #define EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN      1
-    #else
-        #define EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN      0
-    #endif // ESP32 check
-#endif
+// ── ESP-NN DISABLED (tensor arena in PSRAM — see note below) ─────────────────
+// This model's tensor arena is 512 KB. The ESP32-S3 only has ~221 KB of
+// contiguous internal SRAM free after WiFi connects, so the arena MUST be
+// allocated in PSRAM (heap_caps_aligned_alloc with MALLOC_CAP_SPIRAM).
+//
+// ESP-NN's SIMD Conv2D / DepthwiseConv kernels use Xtensa SIMD instructions
+// that require their tensor data to be in INTERNAL SRAM. With a PSRAM arena,
+// op0 (Reshape) works but every subsequent SIMD op silently reads/writes
+// garbage → all final output logits are frozen identical values every call.
+//
+// Setting EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN=0 here (in the header, not the
+// sketch) ensures every library .cpp translation unit sees the override.
+// TFLite falls back to its generic reference kernels which work correctly
+// from PSRAM. Inference is ~3–5× slower but accurate.
+//
+// To re-enable ESP-NN: shrink the model in Edge Impulse Studio until the
+// arena fits within ~180 KB, then remove this block and restore the
+// #ifndef guard below.
+#define EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN      0
+// ─────────────────────────────────────────────────────────────────────────────
 
 #if EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN == 1
     #define ESP_NN                                  1

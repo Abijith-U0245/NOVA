@@ -138,33 +138,66 @@ async def broadcast(payload: dict):
     dashboard_clients.difference_update(dead)
 
 
+# ── ESP32-S3 Telemetry Storage ──────────────────────────────────────────────
+_latest_esp32_metrics = {
+    "cpu_pct": None,
+    "ram_used_kb": None,
+    "ram_total_kb": None,
+    "ram_pct": None,
+    "psram_used_kb": None,
+    "psram_total_kb": None,
+    "infer_time_ms": None,
+    "last_seen": 0
+}
+
 # ── Metrics broadcaster ─────────────────────────────────────────────────────
 async def metrics_broadcaster():
-    """Pushes CPU %, RAM, and last ASR latency every METRICS_INTERVAL seconds."""
+    """Pushes ESP32-S3 CPU %, RAM, and last ASR latency every METRICS_INTERVAL seconds."""
     if _HAS_PSUTIL:
-        psutil.cpu_percent(interval=None)   # warm-up; first call always 0.0
+        psutil.cpu_percent(interval=None)   # warm-up
     while True:
         await asyncio.sleep(METRICS_INTERVAL)
         if not dashboard_clients:
             continue
-        if _HAS_PSUTIL:
-            cpu  = psutil.cpu_percent(interval=None)
-            vm   = psutil.virtual_memory()
-            ram_used_mb  = vm.used  / 1024 / 1024
-            ram_total_mb = vm.total / 1024 / 1024
-            ram_pct      = vm.percent
-        else:
-            cpu = ram_used_mb = ram_total_mb = ram_pct = None
 
-        await broadcast({
-            "type":         "metrics",
-            "cpu_pct":      cpu,
-            "ram_used_mb":  round(ram_used_mb,  1) if ram_used_mb  is not None else None,
-            "ram_total_mb": round(ram_total_mb, 1) if ram_total_mb is not None else None,
-            "ram_pct":      ram_pct,
-            "latency_ms":   round(_last_latency_ms, 1) if _last_latency_ms is not None else None,
-            "ts":           time.time(),
-        })
+        now = time.time()
+        # Prefer ESP32 telemetry if received within the last 8 seconds
+        if now - _latest_esp32_metrics["last_seen"] < 8.0:
+            esp = _latest_esp32_metrics
+            await broadcast({
+                "type":          "metrics",
+                "device":        "ESP32-S3",
+                "cpu_pct":       esp["cpu_pct"],
+                "ram_used_kb":   esp["ram_used_kb"],
+                "ram_total_kb":  esp["ram_total_kb"],
+                "ram_pct":       esp["ram_pct"],
+                "psram_used_kb": esp["psram_used_kb"],
+                "psram_total_kb":esp["psram_total_kb"],
+                "infer_time_ms": esp["infer_time_ms"],
+                "latency_ms":    round(_last_latency_ms, 1) if _last_latency_ms is not None else None,
+                "ts":            now,
+            })
+        else:
+            # Fallback to PC metrics if ESP32 is offline
+            if _HAS_PSUTIL:
+                cpu  = psutil.cpu_percent(interval=None)
+                vm   = psutil.virtual_memory()
+                ram_used_mb  = vm.used  / 1024 / 1024
+                ram_total_mb = vm.total / 1024 / 1024
+                ram_pct      = vm.percent
+            else:
+                cpu = ram_used_mb = ram_total_mb = ram_pct = None
+
+            await broadcast({
+                "type":         "metrics",
+                "device":       "PC (ESP32 Offline)",
+                "cpu_pct":      cpu,
+                "ram_used_mb":  round(ram_used_mb,  1) if ram_used_mb  is not None else None,
+                "ram_total_mb": round(ram_total_mb, 1) if ram_total_mb is not None else None,
+                "ram_pct":      ram_pct,
+                "latency_ms":   round(_last_latency_ms, 1) if _last_latency_ms is not None else None,
+                "ts":           now,
+            })
 
 
 # ── Whisper transcription (runs in thread pool) ─────────────────────────────
@@ -226,12 +259,48 @@ def _transcribe(audio_np: np.ndarray) -> tuple[str, str]:
 
 
 # ── Connection handler ───────────────────────────────────────────────────────
-# ── ESP32 HTTP trigger endpoint ─────────────────────────────────────────────
+# ── ESP32 HTTP trigger & telemetry endpoints ────────────────────────────────
+async def _on_esp32_metrics(request):
+    """Called periodically by ESP32 to push CPU/RAM/inference telemetry."""
+    global _latest_esp32_metrics
+    try:
+        data = await request.json()
+        _latest_esp32_metrics = {
+            "cpu_pct":       data.get("cpu_pct"),
+            "ram_used_kb":   data.get("ram_used_kb"),
+            "ram_total_kb":  data.get("ram_total_kb"),
+            "ram_pct":       data.get("ram_pct"),
+            "psram_used_kb": data.get("psram_used_kb"),
+            "psram_total_kb":data.get("psram_total_kb"),
+            "infer_time_ms": data.get("infer_time_ms"),
+            "last_seen":     time.time()
+        }
+        return aio_web.Response(text="OK", status=200)
+    except Exception as e:
+        return aio_web.Response(text=str(e), status=400)
+
+
 async def _on_esp32_trigger(request):
     """Called when ESP32 sends POST /trigger after detecting NOVA."""
-    global _trigger_ts, _last_latency_ms
+    global _trigger_ts, _last_latency_ms, _latest_esp32_metrics
 
     print("[server] ESP32 HTTP trigger received — launching stream_to_vosk.py")
+    try:
+        data = await request.json()
+        if "cpu_pct" in data:
+            _latest_esp32_metrics = {
+                "cpu_pct":       data.get("cpu_pct"),
+                "ram_used_kb":   data.get("ram_used_kb"),
+                "ram_total_kb":  data.get("ram_total_kb"),
+                "ram_pct":       data.get("ram_pct"),
+                "psram_used_kb": data.get("psram_used_kb"),
+                "psram_total_kb":data.get("psram_total_kb"),
+                "infer_time_ms": data.get("infer_time_ms"),
+                "last_seen":     time.time()
+            }
+    except Exception:
+        pass
+
     _trigger_ts      = time.time()
     _last_latency_ms = None
     await broadcast({"type": "status", "text": "listening", "ts": time.time()})
@@ -249,12 +318,13 @@ async def _on_esp32_trigger(request):
 
 
 async def http_trigger_server():
-    """Minimal HTTP server on HTTP_TRIGGER_PORT for ESP32 trigger POSTs."""
+    """Minimal HTTP server on HTTP_TRIGGER_PORT for ESP32 trigger & telemetry POSTs."""
     if not _HAS_AIOHTTP:
         print("[warn] aiohttp missing — ESP32 /trigger endpoint disabled.")
         return
     app = aio_web.Application()
     app.router.add_post("/trigger", _on_esp32_trigger)
+    app.router.add_post("/esp32_metrics", _on_esp32_metrics)
     runner = aio_web.AppRunner(app)
     await runner.setup()
     site   = aio_web.TCPSite(runner, HOST, HTTP_TRIGGER_PORT)

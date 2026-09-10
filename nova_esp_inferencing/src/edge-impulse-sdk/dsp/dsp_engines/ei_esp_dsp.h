@@ -19,6 +19,7 @@ constexpr int MAX_FFT_SIZE = 4096;
 static bool init_done = false;
 
 static bool can_do_fft(size_t n_fft) {
+    return false; // use reliable software FFT
     // if power of 2 and within range
     if (n_fft < MIN_FFT_SIZE || n_fft > MAX_FFT_SIZE)
         return false;
