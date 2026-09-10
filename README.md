@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # 🛰️ NOVA
 
@@ -6,7 +6,7 @@
 
 *Low-latency Keyword Spotting on ESP32-S3 + Cloud ASR Pipeline*
 
-[![ISRO Smart Automation](https://img.shields.io/badge/ISRO-Smart%20Automation-orange?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJ3aGl0ZSI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz48L3N2Zz4=)](https://www.isro.gov.in/)
+[![ISRO Smart Automation](https://img.shields.io/badge/ISRO-Smart%20Automation-orange?style=for-the-badge)](https://www.isro.gov.in/)
 [![Problem Statement](https://img.shields.io/badge/PS-26172-blue?style=for-the-badge)]()
 [![Platform](https://img.shields.io/badge/ESP32--S3-TFLite%20Micro-green?style=for-the-badge)]()
 [![ASR](https://img.shields.io/badge/Whisper-medium-purple?style=for-the-badge)]()
@@ -425,4 +425,3 @@ The Edge Impulse SDK components are licensed under the [Apache 2.0 License](http
 *Say "NOVA" to activate* 🎙️
 
 </div>
-]]>
